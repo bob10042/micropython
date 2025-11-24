@@ -44,21 +44,6 @@
 #define ENABLE_SPECIAL_ACCESSORS \
     (MICROPY_PY_DESCRIPTORS || MICROPY_PY_DELATTR_SETATTR || MICROPY_PY_BUILTINS_PROPERTY)
 
-#if MICROPY_OPT_METHOD_CACHE
-// Method lookup cache to avoid repeated MRO walks
-typedef struct _method_cache_entry_t {
-    const mp_obj_type_t *type;
-    qstr attr;
-    mp_obj_t dest[2];
-} method_cache_entry_t;
-
-static method_cache_entry_t method_cache[MICROPY_OPT_METHOD_CACHE_SIZE];
-
-static inline void mp_method_cache_invalidate(void) {
-    memset(method_cache, 0, sizeof(method_cache));
-}
-#endif
-
 static mp_obj_t mp_obj_new_type(qstr name, mp_obj_t bases_tuple, mp_obj_t locals_dict);
 static mp_obj_t mp_obj_is_subclass(mp_obj_t object, mp_obj_t classinfo);
 static mp_obj_t static_class_method_make_new(const mp_obj_type_t *self_in, size_t n_args, size_t n_kw, const mp_obj_t *args);
@@ -102,20 +87,7 @@ static int instance_count_native_bases(const mp_obj_type_t *type, const mp_obj_t
 // This wrapper function allows a subclass of a native type to call the
 // __init__() method (corresponding to type->make_new) of the native type.
 static mp_obj_t native_base_init_wrapper(size_t n_args, const mp_obj_t *args, mp_map_t *kw_args) {
-    // Validate that self is actually an instance object, not a corrupted value
-    // (e.g., from `self = integer` in __init__). If self is invalid, accessing
-    // it as mp_obj_instance_t will cause segfault.
-    if (!mp_obj_is_obj(args[0])) {
-        mp_raise_TypeError(MP_ERROR_TEXT("invalid self argument in __init__"));
-    }
-
     mp_obj_instance_t *self = MP_OBJ_TO_PTR(args[0]);
-
-    // Additional check: verify self is actually an instance type
-    if (!mp_obj_is_instance_type(mp_obj_get_type(args[0]))) {
-        mp_raise_TypeError(MP_ERROR_TEXT("invalid self argument in __init__"));
-    }
-
     const mp_obj_type_t *native_base = NULL;
     instance_count_native_bases(self->base.type, &native_base);
     self->subobj[0] = MP_OBJ_TYPE_GET_SLOT(native_base, make_new)(native_base, n_args - 1, kw_args->used, args + 1);
@@ -165,23 +137,6 @@ struct class_lookup_data {
 static void mp_obj_class_lookup(struct class_lookup_data *lookup, const mp_obj_type_t *type) {
     assert(lookup->dest[0] == MP_OBJ_NULL);
     assert(lookup->dest[1] == MP_OBJ_NULL);
-    
-    #if MICROPY_OPT_METHOD_CACHE
-    // Check method cache first (only for non-type lookups with no slot offset)
-    if (!lookup->is_type && lookup->slot_offset == 0) {
-        size_t hash = ((mp_uint_t)type ^ (mp_uint_t)lookup->attr) & (MICROPY_OPT_METHOD_CACHE_SIZE - 1);
-        method_cache_entry_t *entry = &method_cache[hash];
-        
-        if (entry->type == type && entry->attr == lookup->attr) {
-            // Cache hit!
-            lookup->dest[0] = entry->dest[0];
-            lookup->dest[1] = entry->dest[1];
-            DEBUG_printf("mp_obj_class_lookup: Cache hit for %s in %s\n", qstr_str(lookup->attr), qstr_str(type->name));
-            return;
-        }
-    }
-    #endif
-    
     for (;;) {
         DEBUG_printf("mp_obj_class_lookup: Looking up %s in %s\n", qstr_str(lookup->attr), qstr_str(type->name));
         // Optimize special method lookup for native types
@@ -237,19 +192,6 @@ static void mp_obj_class_lookup(struct class_lookup_data *lookup, const mp_obj_t
                 }
                 DEBUG_printf("\n");
                 #endif
-                
-                #if MICROPY_OPT_METHOD_CACHE
-                // Populate cache for non-type lookups with no slot offset
-                if (!lookup->is_type && lookup->slot_offset == 0) {
-                    size_t hash = ((mp_uint_t)type ^ (mp_uint_t)lookup->attr) & (MICROPY_OPT_METHOD_CACHE_SIZE - 1);
-                    method_cache_entry_t *entry = &method_cache[hash];
-                    entry->type = type;
-                    entry->attr = lookup->attr;
-                    entry->dest[0] = lookup->dest[0];
-                    entry->dest[1] = lookup->dest[1];
-                }
-                #endif
-                
                 return;
             }
         }
@@ -1207,12 +1149,6 @@ static void type_attr(mp_obj_t self_in, qstr attr, mp_obj_t *dest) {
                 // store attribute
                 mp_map_elem_t *elem = mp_map_lookup(locals_map, MP_OBJ_NEW_QSTR(attr), MP_MAP_LOOKUP_ADD_IF_NOT_FOUND);
                 elem->value = dest[1];
-                
-                #if MICROPY_OPT_METHOD_CACHE
-                // Invalidate method cache when type is modified
-                mp_method_cache_invalidate();
-                #endif
-                
                 dest[0] = MP_OBJ_NULL; // indicate success
             }
         }

@@ -31,6 +31,12 @@
 #include "py/runtime.h"
 #include "py/cstack.h"
 
+static void mp_obj_list_check_not_sorting(mp_obj_list_t *self) {
+    if (self->sorting_in_progress) {
+        mp_raise_msg(&mp_type_ValueError, MP_ERROR_TEXT("list modified during sort"));
+    }
+}
+
 static mp_obj_t mp_obj_new_list_iterator(mp_obj_t list, size_t cur, mp_obj_iter_buf_t *iter_buf);
 static mp_obj_list_t *list_new(size_t n);
 static mp_obj_t list_extend(mp_obj_t self_in, mp_obj_t arg_in);
@@ -136,6 +142,10 @@ static mp_obj_t list_binary_op(mp_binary_op_t op, mp_obj_t lhs, mp_obj_t rhs) {
             if (n < 0) {
                 n = 0;
             }
+            // Check for integer overflow: o->len * n must fit in size_t
+            if (o->len > 0 && (size_t)n > SIZE_MAX / o->len) {
+                mp_raise_msg(&mp_type_OverflowError, MP_ERROR_TEXT("list too large"));
+            }
             mp_obj_list_t *s = list_new(o->len * n);
             mp_seq_multiply(o->items, sizeof(*o->items), o->len, n, s->items);
             return MP_OBJ_FROM_PTR(s);
@@ -182,6 +192,7 @@ static mp_obj_t list_subscr(mp_obj_t self_in, mp_obj_t index, mp_obj_t value) {
             // delete is equivalent to slice assignment of an empty sequence
             value = mp_const_empty_tuple;
         }
+        mp_obj_list_check_not_sorting(self);
         if (!fast) {
             mp_raise_NotImplementedError(NULL);
         }
@@ -234,7 +245,12 @@ static mp_obj_t list_getiter(mp_obj_t o_in, mp_obj_iter_buf_t *iter_buf) {
 mp_obj_t mp_obj_list_append(mp_obj_t self_in, mp_obj_t arg) {
     mp_check_self(mp_obj_is_type(self_in, &mp_type_list));
     mp_obj_list_t *self = MP_OBJ_TO_PTR(self_in);
+    mp_obj_list_check_not_sorting(self);
     if (self->len >= self->alloc) {
+        // Check for integer overflow before doubling allocation
+        if (self->alloc > SIZE_MAX / 2) {
+            mp_raise_msg(&mp_type_MemoryError, MP_ERROR_TEXT("list too large"));
+        }
         self->items = m_renew(mp_obj_t, self->items, self->alloc, self->alloc * 2);
         self->alloc *= 2;
         mp_seq_clear(self->items, self->len + 1, self->alloc, sizeof(*self->items));
@@ -245,8 +261,9 @@ mp_obj_t mp_obj_list_append(mp_obj_t self_in, mp_obj_t arg) {
 
 static mp_obj_t list_extend(mp_obj_t self_in, mp_obj_t arg_in) {
     mp_check_self(mp_obj_is_type(self_in, &mp_type_list));
+    mp_obj_list_t *self = MP_OBJ_TO_PTR(self_in);
+    mp_obj_list_check_not_sorting(self);
     if (mp_obj_is_type(arg_in, &mp_type_list)) {
-        mp_obj_list_t *self = MP_OBJ_TO_PTR(self_in);
         mp_obj_list_t *arg = MP_OBJ_TO_PTR(arg_in);
 
         // Check for integer overflow before addition and memcpy size calculation
@@ -275,6 +292,7 @@ static mp_obj_t list_extend(mp_obj_t self_in, mp_obj_t arg_in) {
 static mp_obj_t list_pop(size_t n_args, const mp_obj_t *args) {
     mp_check_self(mp_obj_is_type(args[0], &mp_type_list));
     mp_obj_list_t *self = MP_OBJ_TO_PTR(args[0]);
+    mp_obj_list_check_not_sorting(self);
     if (self->len == 0) {
         mp_raise_msg(&mp_type_IndexError, MP_ERROR_TEXT("pop from empty list"));
     }
@@ -353,9 +371,18 @@ mp_obj_t mp_obj_list_sort(size_t n_args, const mp_obj_t *pos_args, mp_map_t *kw_
     mp_obj_list_t *self = MP_OBJ_TO_PTR(pos_args[0]);
 
     if (self->len > 1) {
-        mp_quicksort(self->items - 1, self->items + self->len - 1,
-            args.key.u_obj == mp_const_none ? MP_OBJ_NULL : args.key.u_obj,
-            args.reverse.u_bool ? mp_const_false : mp_const_true);
+        nlr_buf_t nlr;
+        self->sorting_in_progress = true;
+        if (nlr_push(&nlr) == 0) {
+            mp_quicksort(self->items - 1, self->items + self->len - 1,
+                args.key.u_obj == mp_const_none ? MP_OBJ_NULL : args.key.u_obj,
+                args.reverse.u_bool ? mp_const_false : mp_const_true);
+            self->sorting_in_progress = false;
+            nlr_pop();
+        } else {
+            self->sorting_in_progress = false;
+            nlr_jump(nlr.ret_val);
+        }
     }
 
     return mp_const_none;
@@ -364,6 +391,7 @@ mp_obj_t mp_obj_list_sort(size_t n_args, const mp_obj_t *pos_args, mp_map_t *kw_
 static mp_obj_t list_clear(mp_obj_t self_in) {
     mp_check_self(mp_obj_is_type(self_in, &mp_type_list));
     mp_obj_list_t *self = MP_OBJ_TO_PTR(self_in);
+    mp_obj_list_check_not_sorting(self);
     self->len = 0;
     self->items = m_renew(mp_obj_t, self->items, self->alloc, LIST_MIN_ALLOC);
     self->alloc = LIST_MIN_ALLOC;
@@ -392,6 +420,7 @@ static mp_obj_t list_index(size_t n_args, const mp_obj_t *args) {
 static mp_obj_t list_insert(mp_obj_t self_in, mp_obj_t idx, mp_obj_t obj) {
     mp_check_self(mp_obj_is_type(self_in, &mp_type_list));
     mp_obj_list_t *self = MP_OBJ_TO_PTR(self_in);
+    mp_obj_list_check_not_sorting(self);
     // insert has its own strange index logic
     mp_int_t index = MP_OBJ_SMALL_INT_VALUE(idx);
     if (index < 0) {
@@ -484,6 +513,7 @@ void mp_obj_list_init(mp_obj_list_t *o, size_t n) {
     o->alloc = n < LIST_MIN_ALLOC ? LIST_MIN_ALLOC : n;
     o->len = n;
     o->items = m_new(mp_obj_t, o->alloc);
+    o->sorting_in_progress = false;
     mp_seq_clear(o->items, n, o->alloc, sizeof(*o->items));
 }
 

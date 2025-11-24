@@ -89,6 +89,11 @@ static mp_obj_t mp_obj_tuple_make_new(const mp_obj_type_t *type_in, size_t n_arg
             mp_obj_t item;
             while ((item = mp_iternext(iterable)) != MP_OBJ_STOP_ITERATION) {
                 if (len >= alloc) {
+                    // Check for integer overflow before doubling allocation
+                    if (alloc > SIZE_MAX / 2) {
+                        m_del(mp_obj_t, items, alloc);
+                        mp_raise_msg(&mp_type_MemoryError, MP_ERROR_TEXT("tuple too large"));
+                    }
                     items = m_renew(mp_obj_t, items, alloc, alloc * 2);
                     alloc *= 2;
                 }
@@ -149,6 +154,10 @@ mp_obj_t mp_obj_tuple_binary_op(mp_binary_op_t op, mp_obj_t lhs, mp_obj_t rhs) {
                 return MP_OBJ_NULL; // op not supported
             }
             mp_obj_tuple_t *p = MP_OBJ_TO_PTR(rhs);
+            // Check for integer overflow: o->len + p->len must fit in size_t
+            if (o->len > SIZE_MAX - p->len) {
+                mp_raise_msg(&mp_type_OverflowError, MP_ERROR_TEXT("tuple too large"));
+            }
             mp_obj_tuple_t *s = MP_OBJ_TO_PTR(mp_obj_new_tuple(o->len + p->len, NULL));
             mp_seq_cat(s->items, o->items, o->len, p->items, p->len, mp_obj_t);
             return MP_OBJ_FROM_PTR(s);
@@ -161,6 +170,10 @@ mp_obj_t mp_obj_tuple_binary_op(mp_binary_op_t op, mp_obj_t lhs, mp_obj_t rhs) {
             }
             if (n <= 0) {
                 return mp_const_empty_tuple;
+            }
+            // Check for integer overflow: o->len * n must fit in size_t
+            if ((size_t)n > SIZE_MAX / o->len) {
+                mp_raise_msg(&mp_type_OverflowError, MP_ERROR_TEXT("tuple too large"));
             }
             mp_obj_tuple_t *s = MP_OBJ_TO_PTR(mp_obj_new_tuple(o->len * n, NULL));
             mp_seq_multiply(o->items, sizeof(*o->items), o->len, n, s->items);
