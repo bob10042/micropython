@@ -738,6 +738,12 @@ MP_NOINLINE int main_(int argc, char **argv) {
     gc_sweep_all();
     #endif
 
+    // Cleanup machine resources before deinit
+    #if MICROPY_PY_MACHINE
+    extern void mp_machine_deinit(void);
+    mp_machine_deinit();
+    #endif
+
     mp_deinit();
 
     #if MICROPY_ENABLE_GC && !defined(NDEBUG)

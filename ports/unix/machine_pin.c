@@ -24,8 +24,9 @@
  * THE SOFTWARE.
  */
 
-// GPIO support for Linux using sysfs or gpiochip character device
+// GPIO support for Linux using GPIO character device (gpiochip)
 // This provides machine.Pin functionality for Raspberry Pi and other Linux SBCs
+// Requires Linux kernel 5.10+ for full GPIO v2 API support (pull up/down)
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -46,6 +47,10 @@
 #define MICROPY_HW_GPIO_CHIP "/dev/gpiochip4"
 #endif
 
+#ifndef MICROPY_HW_NUM_PINS
+#define MICROPY_HW_NUM_PINS 64
+#endif
+
 #define GPIO_MODE_IN  (0)
 #define GPIO_MODE_OUT (1)
 #define GPIO_PULL_NONE (0)
@@ -61,20 +66,58 @@ typedef struct _machine_pin_obj_t {
     uint8_t value;
 } machine_pin_obj_t;
 
-static machine_pin_obj_t *machine_pin_obj_all[64] = {0};  // Support up to 64 GPIO pins
+static machine_pin_obj_t *machine_pin_obj_all[MICROPY_HW_NUM_PINS] = {0};
 
 static int gpio_chip_fd = -1;
 
-// Open the GPIO chip device
+#if MICROPY_PY_THREAD
+#include "py/mpthread.h"
+static mp_thread_mutex_t gpio_chip_mutex;
+static bool mutex_initialized = false;
+#endif
+
+// Open the GPIO chip device (thread-safe)
 static int open_gpio_chip(void) {
+    #if MICROPY_PY_THREAD
+    if (!mutex_initialized) {
+        mp_thread_mutex_init(&gpio_chip_mutex);
+        mutex_initialized = true;
+    }
+    mp_thread_mutex_lock(&gpio_chip_mutex, 1);
+    #endif
+
     if (gpio_chip_fd < 0) {
         gpio_chip_fd = open(MICROPY_HW_GPIO_CHIP, O_RDWR);
         if (gpio_chip_fd < 0) {
             // Try alternate chip for Raspberry Pi 4 and earlier
             gpio_chip_fd = open("/dev/gpiochip0", O_RDWR);
+            if (gpio_chip_fd < 0) {
+                // Try gpiochip1 for some boards
+                gpio_chip_fd = open("/dev/gpiochip1", O_RDWR);
+            }
         }
     }
-    return gpio_chip_fd;
+    int fd = gpio_chip_fd;
+
+    #if MICROPY_PY_THREAD
+    mp_thread_mutex_unlock(&gpio_chip_mutex);
+    #endif
+
+    return fd;
+}
+
+// Cleanup function called on exit
+void machine_pin_deinit_all(void) {
+    for (int i = 0; i < MICROPY_HW_NUM_PINS; i++) {
+        if (machine_pin_obj_all[i] && machine_pin_obj_all[i]->fd >= 0) {
+            close(machine_pin_obj_all[i]->fd);
+            machine_pin_obj_all[i]->fd = -1;
+        }
+    }
+    if (gpio_chip_fd >= 0) {
+        close(gpio_chip_fd);
+        gpio_chip_fd = -1;
+    }
 }
 
 static void machine_pin_print(const mp_print_t *print, mp_obj_t self_in, mp_print_kind_t kind) {
@@ -109,7 +152,8 @@ static mp_obj_t machine_pin_obj_init_helper(machine_pin_obj_t *self, size_t n_ar
     // Request the GPIO line from the kernel
     int chip_fd = open_gpio_chip();
     if (chip_fd < 0) {
-        mp_raise_OSError(errno);
+        mp_raise_msg(&mp_type_OSError,
+            MP_ERROR_TEXT("Cannot access GPIO. Run with sudo or add user to 'gpio' group"));
     }
 
     // Close existing line if already open
@@ -118,6 +162,45 @@ static mp_obj_t machine_pin_obj_init_helper(machine_pin_obj_t *self, size_t n_ar
         self->fd = -1;
     }
 
+    // Try GPIO v2 API first (kernel 5.10+, supports pull up/down)
+    #ifdef GPIO_V2_GET_LINE_IOCTL
+    struct gpio_v2_line_request req_v2;
+    memset(&req_v2, 0, sizeof(req_v2));
+    req_v2.offsets[0] = self->id;
+    req_v2.num_lines = 1;
+
+    // Configure pull up/down
+    if (self->pull == GPIO_PULL_UP) {
+        req_v2.config.flags |= GPIO_V2_LINE_FLAG_BIAS_PULL_UP;
+    } else if (self->pull == GPIO_PULL_DOWN) {
+        req_v2.config.flags |= GPIO_V2_LINE_FLAG_BIAS_PULL_DOWN;
+    } else {
+        req_v2.config.flags |= GPIO_V2_LINE_FLAG_BIAS_DISABLED;
+    }
+
+    // Configure direction
+    if (self->mode == GPIO_MODE_IN) {
+        req_v2.config.flags |= GPIO_V2_LINE_FLAG_INPUT;
+    } else {
+        req_v2.config.flags |= GPIO_V2_LINE_FLAG_OUTPUT;
+        if (args[ARG_value].u_obj != mp_const_none) {
+            self->value = mp_obj_is_true(args[ARG_value].u_obj);
+            req_v2.config.values = (1ULL << 0);  // Set bit for default value
+            if (!self->value) {
+                req_v2.config.values = 0;
+            }
+        }
+    }
+
+    snprintf(req_v2.consumer, sizeof(req_v2.consumer), "micropython");
+
+    if (ioctl(chip_fd, GPIO_V2_GET_LINE_IOCTL, &req_v2) == 0) {
+        self->fd = req_v2.fd;
+        return mp_const_none;
+    }
+    #endif
+
+    // Fallback to GPIO v1 API (older kernels, no pull up/down support)
     struct gpiohandle_request req;
     memset(&req, 0, sizeof(req));
     req.lineoffsets[0] = self->id;
@@ -133,9 +216,6 @@ static mp_obj_t machine_pin_obj_init_helper(machine_pin_obj_t *self, size_t n_ar
         }
     }
 
-    // Note: Pull up/down configuration via GPIO character device requires newer kernel (5.5+)
-    // For older kernels, this would need to be done via device tree or other means
-
     snprintf(req.consumer_label, sizeof(req.consumer_label), "micropython");
 
     if (ioctl(chip_fd, GPIO_GET_LINEHANDLE_IOCTL, &req) < 0) {
@@ -143,6 +223,11 @@ static mp_obj_t machine_pin_obj_init_helper(machine_pin_obj_t *self, size_t n_ar
     }
 
     self->fd = req.fd;
+
+    // Warn if pull up/down was requested but not supported
+    if (self->pull != GPIO_PULL_NONE) {
+        mp_warning(NULL, "Pull up/down not supported on this kernel (need 5.10+)");
+    }
 
     return mp_const_none;
 }
@@ -152,7 +237,7 @@ static mp_obj_t machine_pin_make_new(const mp_obj_type_t *type, size_t n_args, s
 
     // Get pin id
     int pin_id = mp_obj_get_int(args[0]);
-    if (pin_id < 0 || pin_id >= 64) {
+    if (pin_id < 0 || pin_id >= MICROPY_HW_NUM_PINS) {
         mp_raise_ValueError(MP_ERROR_TEXT("invalid pin"));
     }
 
@@ -177,9 +262,25 @@ static mp_obj_t machine_pin_make_new(const mp_obj_type_t *type, size_t n_args, s
     return MP_OBJ_FROM_PTR(self);
 }
 
+// Deinitialize pin and release resources
+static mp_obj_t machine_pin_deinit(mp_obj_t self_in) {
+    machine_pin_obj_t *self = MP_OBJ_TO_PTR(self_in);
+    if (self->fd >= 0) {
+        close(self->fd);
+        self->fd = -1;
+    }
+    return mp_const_none;
+}
+static MP_DEFINE_CONST_FUN_OBJ_1(machine_pin_deinit_obj, machine_pin_deinit);
+
 static mp_obj_t machine_pin_obj_call(mp_obj_t self_in, size_t n_args, size_t n_kw, const mp_obj_t *args) {
     mp_arg_check_num(n_args, n_kw, 0, 1, false);
     machine_pin_obj_t *self = MP_OBJ_TO_PTR(self_in);
+
+    if (self->fd < 0) {
+        mp_raise_ValueError(MP_ERROR_TEXT("pin not initialized"));
+    }
+
     if (n_args == 0) {
         // Get pin value
         struct gpiohandle_data data;
@@ -207,6 +308,9 @@ static MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(machine_pin_value_obj, 1, 2, machine_
 
 static mp_obj_t machine_pin_on(mp_obj_t self_in) {
     machine_pin_obj_t *self = MP_OBJ_TO_PTR(self_in);
+    if (self->fd < 0) {
+        mp_raise_ValueError(MP_ERROR_TEXT("pin not initialized"));
+    }
     self->value = 1;
     struct gpiohandle_data data;
     data.values[0] = 1;
@@ -219,6 +323,9 @@ static MP_DEFINE_CONST_FUN_OBJ_1(machine_pin_on_obj, machine_pin_on);
 
 static mp_obj_t machine_pin_off(mp_obj_t self_in) {
     machine_pin_obj_t *self = MP_OBJ_TO_PTR(self_in);
+    if (self->fd < 0) {
+        mp_raise_ValueError(MP_ERROR_TEXT("pin not initialized"));
+    }
     self->value = 0;
     struct gpiohandle_data data;
     data.values[0] = 0;
@@ -231,6 +338,9 @@ static MP_DEFINE_CONST_FUN_OBJ_1(machine_pin_off_obj, machine_pin_off);
 
 static mp_obj_t machine_pin_toggle(mp_obj_t self_in) {
     machine_pin_obj_t *self = MP_OBJ_TO_PTR(self_in);
+    if (self->fd < 0) {
+        mp_raise_ValueError(MP_ERROR_TEXT("pin not initialized"));
+    }
 
     // Read current value
     struct gpiohandle_data data;
@@ -250,12 +360,29 @@ static mp_obj_t machine_pin_toggle(mp_obj_t self_in) {
 }
 static MP_DEFINE_CONST_FUN_OBJ_1(machine_pin_toggle_obj, machine_pin_toggle);
 
+// Get current pin mode
+static mp_obj_t machine_pin_mode(mp_obj_t self_in) {
+    machine_pin_obj_t *self = MP_OBJ_TO_PTR(self_in);
+    return MP_OBJ_NEW_SMALL_INT(self->mode);
+}
+static MP_DEFINE_CONST_FUN_OBJ_1(machine_pin_mode_obj, machine_pin_mode);
+
+// Get current pin pull configuration
+static mp_obj_t machine_pin_pull(mp_obj_t self_in) {
+    machine_pin_obj_t *self = MP_OBJ_TO_PTR(self_in);
+    return MP_OBJ_NEW_SMALL_INT(self->pull);
+}
+static MP_DEFINE_CONST_FUN_OBJ_1(machine_pin_pull_obj, machine_pin_pull);
+
 static const mp_rom_map_elem_t machine_pin_locals_dict_table[] = {
     // Instance methods
+    { MP_ROM_QSTR(MP_QSTR_deinit), MP_ROM_PTR(&machine_pin_deinit_obj) },
     { MP_ROM_QSTR(MP_QSTR_value), MP_ROM_PTR(&machine_pin_value_obj) },
     { MP_ROM_QSTR(MP_QSTR_on), MP_ROM_PTR(&machine_pin_on_obj) },
     { MP_ROM_QSTR(MP_QSTR_off), MP_ROM_PTR(&machine_pin_off_obj) },
     { MP_ROM_QSTR(MP_QSTR_toggle), MP_ROM_PTR(&machine_pin_toggle_obj) },
+    { MP_ROM_QSTR(MP_QSTR_mode), MP_ROM_PTR(&machine_pin_mode_obj) },
+    { MP_ROM_QSTR(MP_QSTR_pull), MP_ROM_PTR(&machine_pin_pull_obj) },
 
     // Class constants
     { MP_ROM_QSTR(MP_QSTR_IN), MP_ROM_INT(GPIO_MODE_IN) },
@@ -270,10 +397,16 @@ static mp_uint_t pin_ioctl(mp_obj_t self_in, mp_uint_t request, uintptr_t arg, i
     (void)errcode;
     machine_pin_obj_t *self = MP_OBJ_TO_PTR(self_in);
 
+    if (self->fd < 0) {
+        *errcode = MP_EINVAL;
+        return -1;
+    }
+
     switch (request) {
         case MP_PIN_READ: {
             struct gpiohandle_data data;
             if (ioctl(self->fd, GPIOHANDLE_GET_LINE_VALUES_IOCTL, &data) < 0) {
+                *errcode = errno;
                 return -1;
             }
             return data.values[0];
@@ -282,11 +415,13 @@ static mp_uint_t pin_ioctl(mp_obj_t self_in, mp_uint_t request, uintptr_t arg, i
             struct gpiohandle_data data;
             data.values[0] = arg;
             if (ioctl(self->fd, GPIOHANDLE_SET_LINE_VALUES_IOCTL, &data) < 0) {
+                *errcode = errno;
                 return -1;
             }
             return 0;
         }
     }
+    *errcode = MP_EINVAL;
     return -1;
 }
 

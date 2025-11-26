@@ -49,6 +49,9 @@ extern const mp_obj_type_t machine_uart_type;
 extern const mp_obj_type_t machine_usb_type;
 extern mp_obj_t machine_usb_singleton(void);
 
+// Cleanup functions
+extern void machine_pin_deinit_all(void);
+
 // Register port-specific machine module classes
 #define MICROPY_PY_MACHINE_EXTRA_GLOBALS \
     { MP_ROM_QSTR(MP_QSTR_Pin), MP_ROM_PTR(&machine_pin_type) }, \
@@ -98,4 +101,9 @@ static void mp_machine_idle(void) {
     #else
     // Do nothing.
     #endif
+}
+
+// Cleanup machine resources on exit
+void mp_machine_deinit(void) {
+    machine_pin_deinit_all();
 }
