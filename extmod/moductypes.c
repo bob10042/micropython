@@ -169,7 +169,15 @@ static mp_uint_t uctypes_struct_agg_size(mp_obj_tuple_t *t, int layout_type, mp_
             if (t->len != 2) {
                 syntax_error();
             }
-            return uctypes_struct_size(t->items[1], layout_type, max_field_size);
+            // For nested structures, calculate their size with a separate max_field_size
+            // to avoid including nested field alignment in parent structure alignment
+            mp_uint_t nested_max = 0;
+            mp_uint_t nested_size = uctypes_struct_size(t->items[1], layout_type, &nested_max);
+            // The nested struct as a whole has alignment equal to its largest field
+            if (nested_max > *max_field_size) {
+                *max_field_size = nested_max;
+            }
+            return nested_size;
         case PTR:
             // Second field ignored, but should still be present for consistency.
             if (t->len != 2) {
