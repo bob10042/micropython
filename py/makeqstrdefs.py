@@ -70,7 +70,14 @@ def preprocess():
         cpus = multiprocessing.cpu_count()
     except NotImplementedError:
         cpus = 1
-    p = multiprocessing.dummy.Pool(cpus)
+    use_pool = cpus > 1 and not os.environ.get("MICROPY_FORCE_QSTR_SINGLE_PROCESS")
+    p = None
+    if use_pool:
+        try:
+            p = multiprocessing.dummy.Pool(cpus)
+        except (PermissionError, OSError):
+            # Some constrained environments block semaphore creation; fall back to serial processing.
+            p = None
     with open(args.output[0], "wb") as out_file:
         for flags, sources in (
             (args.cflags, csources),
@@ -78,8 +85,13 @@ def preprocess():
         ):
             batch_size = (len(sources) + cpus - 1) // cpus
             chunks = [sources[i : i + batch_size] for i in range(0, len(sources), batch_size or 1)]
-            for output in p.imap(pp(flags), chunks):
-                out_file.write(output)
+            runner = pp(flags)
+            if p:
+                for output in p.imap(runner, chunks):
+                    out_file.write(output)
+            else:
+                for chunk in chunks:
+                    out_file.write(runner(chunk))
 
 
 def write_out(fname, output):

@@ -33,6 +33,7 @@ typedef struct _mp_obj_list_t {
     size_t alloc;
     size_t len;
     mp_obj_t *items;
+    bool sorting_in_progress;
 } mp_obj_list_t;
 
 void mp_obj_list_init(mp_obj_list_t *o, size_t n);

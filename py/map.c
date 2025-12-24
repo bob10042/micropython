@@ -120,10 +120,19 @@ void mp_map_clear(mp_map_t *map) {
 
 static void mp_map_rehash(mp_map_t *map) {
     size_t old_alloc = map->alloc;
+    // Check for integer overflow before doubling allocation
+    if (old_alloc > 0 && old_alloc > SIZE_MAX / 2) {
+        mp_raise_msg(&mp_type_MemoryError, MP_ERROR_TEXT("dict too large"));
+    }
     size_t new_alloc = (old_alloc == 0) ? 4 : old_alloc * 2;
     DEBUG_printf("mp_map_rehash(%p): " UINT_FMT " -> " UINT_FMT "\n", map, old_alloc, new_alloc);
     mp_map_elem_t *old_table = map->table;
     mp_map_elem_t *new_table = m_new0(mp_map_elem_t, new_alloc);
+    // Defensive check: m_new0 should never return NULL (raises exception on failure),
+    // but verify allocation succeeded before proceeding
+    if (new_table == NULL) {
+        mp_raise_msg(&mp_type_MemoryError, MP_ERROR_TEXT("dict allocation failed"));
+    }
     // If we reach this point, table resizing succeeded, now we can edit the old map.
     map->alloc = new_alloc;
     map->used = 0;
@@ -325,6 +334,10 @@ void mp_set_init(mp_set_t *set, size_t n) {
 static void mp_set_rehash(mp_set_t *set) {
     size_t old_alloc = set->alloc;
     mp_obj_t *old_table = set->table;
+    // Check for integer overflow before doubling allocation
+    if (set->alloc > 0 && set->alloc > SIZE_MAX / 2) {
+        mp_raise_msg(&mp_type_MemoryError, MP_ERROR_TEXT("set too large"));
+    }
     set->alloc = (set->alloc == 0) ? 4 : set->alloc * 2;
     set->used = 0;
     set->table = m_new0(mp_obj_t, set->alloc);

@@ -172,7 +172,8 @@ int mp_hal_stdin_rx_chr(void) {
         }
     }
     main_term:;
-    #endif    unsigned char c;
+    #endif
+    unsigned char c;
     ssize_t ret;
     MP_HAL_RETRY_SYSCALL(ret, read(STDIN_FILENO, &c, 1), {});
     if (ret == 0) {
