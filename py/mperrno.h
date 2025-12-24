@@ -68,6 +68,8 @@
 #define MP_EDOM              (33) // Math argument out of domain of func
 #define MP_ERANGE            (34) // Math result not representable
 #define MP_EWOULDBLOCK  MP_EAGAIN // Operation would block
+#define MP_ENAMETOOLONG      (36) // File name too long
+#define MP_EOVERFLOW         (75) // Value too large for defined data type
 #define MP_EOPNOTSUPP        (95) // Operation not supported on transport endpoint
 #define MP_EAFNOSUPPORT      (97) // Address family not supported by protocol
 #define MP_EADDRINUSE        (98) // Address already in use
@@ -124,6 +126,8 @@
 #define MP_EDOM             EDOM
 #define MP_ERANGE           ERANGE
 #define MP_EWOULDBLOCK      EWOULDBLOCK
+#define MP_ENAMETOOLONG     ENAMETOOLONG
+#define MP_EOVERFLOW        EOVERFLOW
 #define MP_EOPNOTSUPP       EOPNOTSUPP
 #define MP_EAFNOSUPPORT     EAFNOSUPPORT
 #define MP_EADDRINUSE       EADDRINUSE
