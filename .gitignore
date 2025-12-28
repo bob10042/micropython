@@ -32,3 +32,8 @@ user.props
 # Created by ci.sh esp8266 targets
 /xtensa-lx106-elf-standalone.tar.gz
 /xtensa-lx106-elf/
+
+# PyBoard Native build/backup artifacts
+micropython testing software/PyBoard_Native/Debug/
+micropython testing software/PyBoard_Native/backups/
+micropython testing software/PyBoard_Native/firmware_releases/
