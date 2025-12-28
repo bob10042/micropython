@@ -20,12 +20,6 @@ $CUBEIDE_PATH = "C:\ST\STM32CubeIDE_2.0.0\STM32CubeIDE"
 # ARM GCC Toolchain Path (bundled with STM32CubeIDE)
 $TOOLCHAIN_PATH = "$CUBEIDE_PATH\plugins\com.st.stm32cube.ide.mcu.externaltools.gnu-tools-for-stm32.13.3.rel1.win32_1.0.100.202509120712\tools\bin"
 
-# STM32CubeMX Path (standalone installation)
-$CUBEMX_PATH = "C:\Users\bob43\AppData\Local\Programs\STM32CubeMX"
-
-# STM32Cube Firmware Repository
-$FIRMWARE_REPO = "C:\Users\bob43\STM32Cube\Repository\STM32Cube_FW_F4_V1.28.0"
-
 # Project Paths
 $PROJECT_ROOT = $PSScriptRoot
 $DEBUG_DIR = "$PROJECT_ROOT\Debug"
