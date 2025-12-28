@@ -253,11 +253,7 @@ static double mp_obj_get_float_to_d(mp_obj_t o) {
 }
 
 #endif
- 
-static void mp_native_handle_pending(void) {
-    mp_handle_pending(true);
-}
- 
+
 // these must correspond to the respective enum in nativeglue.h
 const mp_fun_table_t mp_fun_table = {
     mp_const_none,
@@ -318,7 +314,6 @@ const mp_fun_table_t mp_fun_table = {
     #else
     NULL,
     #endif
-    mp_native_handle_pending,
     // Additional entries for dynamic runtime, starts at index 50
     memset,
     memmove,
