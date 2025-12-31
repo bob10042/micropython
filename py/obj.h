@@ -1079,6 +1079,8 @@ mp_obj_t mp_obj_subscr(mp_obj_t base, mp_obj_t index, mp_obj_t val);
 
 // cell
 
+extern const mp_obj_type_t mp_type_cell;
+
 typedef struct _mp_obj_cell_t {
     mp_obj_base_t base;
     mp_obj_t obj;

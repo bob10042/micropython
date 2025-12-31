@@ -447,6 +447,10 @@ static MP_DEFINE_CONST_OBJ_TYPE(
 
 static mp_obj_t mod_re_compile(size_t n_args, const mp_obj_t *args) {
     (void)n_args;
+    // Validate that the pattern is a string
+    if (!mp_obj_is_str(args[0]) && !mp_obj_is_type(args[0], &mp_type_bytes)) {
+        mp_raise_TypeError(MP_ERROR_TEXT("pattern must be a string or bytes"));
+    }
     const char *re_str = mp_obj_str_get_str(args[0]);
     int size = re1_5_sizecode(re_str);
     if (size == -1) {

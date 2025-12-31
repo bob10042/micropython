@@ -122,13 +122,36 @@ static bool is_string_or_bytes(mp_lexer_t *lex) {
                && is_char_following_following_or(lex, '\'', '\"'));
 }
 
-// to easily parse utf-8 identifiers we allow any raw byte with high bit set
+// Check if byte is a valid UTF-8 lead byte (starts a multi-byte sequence)
+// Valid lead bytes: 0xC2-0xDF (2-byte), 0xE0-0xEF (3-byte), 0xF0-0xF4 (4-byte)
+// Invalid: 0x80-0xBF (continuation), 0xC0-0xC1 (overlong), 0xF5-0xFF (>U+10FFFF)
+static bool is_valid_utf8_lead(unichar c) {
+    return (c >= 0xC2 && c <= 0xDF) ||  // 2-byte sequence lead
+           (c >= 0xE0 && c <= 0xEF) ||  // 3-byte sequence lead
+           (c >= 0xF0 && c <= 0xF4);    // 4-byte sequence lead
+}
+
+// Check if byte is a valid UTF-8 continuation byte (0x80-0xBF)
+static bool is_utf8_cont(unichar c) {
+    return (c & 0xC0) == 0x80;
+}
+
+// to parse utf-8 identifiers, we need valid UTF-8 sequences
 static bool is_head_of_identifier(mp_lexer_t *lex) {
-    return is_letter(lex) || lex->chr0 == '_' || lex->chr0 >= 0x80;
+    if (is_letter(lex) || lex->chr0 == '_') {
+        return true;
+    }
+    // For UTF-8 multi-byte characters, validate the lead byte
+    // Continuation bytes (0x80-0xBF) and invalid bytes are rejected
+    return is_valid_utf8_lead(lex->chr0);
 }
 
 static bool is_tail_of_identifier(mp_lexer_t *lex) {
-    return is_head_of_identifier(lex) || is_digit(lex);
+    if (is_letter(lex) || lex->chr0 == '_' || is_digit(lex)) {
+        return true;
+    }
+    // Accept valid UTF-8 lead bytes or continuation bytes
+    return is_valid_utf8_lead(lex->chr0) || is_utf8_cont(lex->chr0);
 }
 
 static void next_char(mp_lexer_t *lex) {

@@ -80,7 +80,12 @@ static mp_obj_t mp_builtin___build_class__(size_t n_args, const mp_obj_t *args) 
     mp_obj_t new_class = mp_call_function_n_kw(meta, 3, 0, meta_args);
 
     // store into cell if needed
+    // The class body function returns either None or a cell object for __class__
+    // We must verify it's actually a cell to prevent type confusion attacks
     if (cell != mp_const_none) {
+        if (!mp_obj_is_type(cell, &mp_type_cell)) {
+            mp_raise_TypeError(MP_ERROR_TEXT("__class__ cell is not a cell"));
+        }
         mp_obj_cell_set(cell, new_class);
     }
 

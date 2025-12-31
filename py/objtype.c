@@ -1333,6 +1333,11 @@ static mp_obj_t super_make_new(const mp_obj_type_t *type_in, size_t n_args, size
     // 1 argument is not yet implemented
     mp_arg_check_num(n_args, n_kw, 2, 2, false);
 
+    // First argument must be a type
+    if (!mp_obj_is_type(args[0], &mp_type_type)) {
+        mp_raise_TypeError(MP_ERROR_TEXT("super() argument 1 must be a type"));
+    }
+
     // Per CPython: "If the second argument is an object, isinstance(obj, type) must be true.
     // If the second argument is a type, issubclass(type2, type) must be true (this is useful for classmethods)."
     const mp_obj_type_t *second_arg_type = mp_obj_get_type(args[1]);

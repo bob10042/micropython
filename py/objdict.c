@@ -58,8 +58,17 @@ static mp_map_elem_t *dict_iter_next(mp_obj_dict_t *dict, size_t *cur) {
     size_t max = dict->map.alloc;
     mp_map_t *map = &dict->map;
 
+    // Check for NULL table (can happen if dict is modified during iteration)
+    if (map->table == NULL) {
+        return NULL;
+    }
+
     size_t i = *cur;
     for (; i < max; i++) {
+        // Re-check table validity in case a key's __eq__ modified the dict
+        if (map->table == NULL || i >= map->alloc) {
+            return NULL;
+        }
         if (mp_map_slot_is_filled(map, i)) {
             *cur = i + 1;
             return &(map->table[i]);

@@ -80,6 +80,17 @@ static mp_obj_t code_execute(mp_obj_code_t *self, mp_obj_dict_t *globals, mp_obj
 static mp_obj_t mp_builtin_compile(size_t n_args, const mp_obj_t *args) {
     (void)n_args;
 
+    // Validate that source, filename, and mode are strings
+    if (!mp_obj_is_str(args[0])) {
+        mp_raise_TypeError(MP_ERROR_TEXT("source must be a string"));
+    }
+    if (!mp_obj_is_str(args[1])) {
+        mp_raise_TypeError(MP_ERROR_TEXT("filename must be a string"));
+    }
+    if (!mp_obj_is_str(args[2])) {
+        mp_raise_TypeError(MP_ERROR_TEXT("mode must be a string"));
+    }
+
     // get the source
     size_t str_len;
     const char *str = mp_obj_str_get_data(args[0], &str_len);

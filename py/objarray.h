@@ -32,6 +32,11 @@
 // Used only for memoryview types, set in "typecode" to indicate a writable memoryview
 #define MP_OBJ_ARRAY_TYPECODE_FLAG_RW (0x80)
 
+// Flag to indicate that a memoryview may reference this array's buffer.
+// Once set, the array cannot be resized to prevent dangling pointers.
+// This is set when array_get_buffer is called and never cleared (conservative).
+#define MP_OBJ_ARRAY_TYPECODE_FLAG_VIEW_EXPORTED (0x40)
+
 // Bit size used for mp_obj_array_t.free member.
 #define MP_OBJ_ARRAY_FREE_SIZE_BITS (8 * sizeof(size_t) - 8)
 

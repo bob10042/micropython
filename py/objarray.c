@@ -66,6 +66,17 @@ static mp_obj_t array_append(mp_obj_t self_in, mp_obj_t arg);
 static mp_obj_t array_extend(mp_obj_t self_in, mp_obj_t arg_in);
 static mp_int_t array_get_buffer(mp_obj_t o_in, mp_buffer_info_t *bufinfo, mp_uint_t flags);
 
+#if MICROPY_PY_BUILTINS_MEMORYVIEW
+// Check if array can be resized. Raises BufferError if memoryview may reference it.
+static void array_check_can_resize(mp_obj_array_t *self) {
+    if (self->typecode & MP_OBJ_ARRAY_TYPECODE_FLAG_VIEW_EXPORTED) {
+        mp_raise_msg(&mp_type_BufferError, MP_ERROR_TEXT("cannot resize array with exported buffer"));
+    }
+}
+#else
+#define array_check_can_resize(self) ((void)0)
+#endif
+
 /******************************************************************************/
 // array
 
@@ -96,6 +107,11 @@ static void array_print(const mp_print_t *print, mp_obj_t o_in, mp_print_kind_t 
 #if MICROPY_PY_BUILTINS_BYTEARRAY || MICROPY_PY_ARRAY
 static mp_obj_array_t *array_new(char typecode, size_t n) {
     int typecode_size = mp_binary_get_size('@', typecode, NULL);
+    // Check for integer overflow: typecode_size * n must not overflow size_t
+    // This prevents heap overflow when a malicious __len__ returns a huge value
+    if (n > 0 && (size_t)typecode_size > SIZE_MAX / n) {
+        mp_raise_msg(&mp_type_OverflowError, MP_ERROR_TEXT("array too large"));
+    }
     mp_obj_array_t *o = m_new_obj(mp_obj_array_t);
     #if MICROPY_PY_BUILTINS_BYTEARRAY && MICROPY_PY_ARRAY
     o->base.type = (typecode == BYTEARRAY_TYPECODE) ? &mp_type_bytearray : &mp_type_array;
@@ -113,14 +129,21 @@ static mp_obj_array_t *array_new(char typecode, size_t n) {
 #endif
 
 #if MICROPY_PY_BUILTINS_BYTEARRAY || MICROPY_PY_ARRAY
+// Helper to safely extend an array from an iterable, checking bounds when len is provided
 static void array_extend_impl(mp_obj_array_t *array, mp_obj_t arg, char typecode, size_t len) {
     mp_obj_t iterable = mp_getiter(arg, NULL);
     mp_obj_t item;
     size_t i = 0;
     while ((item = mp_iternext(iterable)) != MP_OBJ_STOP_ITERATION) {
         if (len == 0) {
+            // Unknown length - use append which handles resizing safely
             array_append(MP_OBJ_FROM_PTR(array), item);
         } else {
+            // Check that we don't exceed the preallocated length
+            // This prevents buffer overflow when iterator yields more items than __len__ claimed
+            if (i >= len) {
+                mp_raise_msg(&mp_type_ValueError, MP_ERROR_TEXT("iterator length mismatch"));
+            }
             mp_binary_set_val_array(typecode, array->items, i++, item);
         }
     }
@@ -392,7 +415,9 @@ static mp_obj_t array_append(mp_obj_t self_in, mp_obj_t arg) {
     mp_obj_array_t *self = MP_OBJ_TO_PTR(self_in);
 
     if (self->free == 0) {
-        size_t item_sz = mp_binary_get_size('@', self->typecode, NULL);
+        // Check if resize is allowed (no active memoryviews)
+        array_check_can_resize(self);
+        size_t item_sz = mp_binary_get_size('@', self->typecode & TYPECODE_MASK, NULL);
         // TODO: alloc policy
         size_t add_cnt = 8;
         self->items = m_renew(byte, self->items, item_sz * self->len, item_sz * (self->len + add_cnt));
@@ -428,6 +453,8 @@ static mp_obj_t array_extend(mp_obj_t self_in, mp_obj_t arg_in) {
     // make sure we have enough room to extend
     // TODO: alloc policy; at the moment we go conservative
     if (self->free < len) {
+        // Check if resize is allowed (no active memoryviews)
+        array_check_can_resize(self);
         self->items = m_renew(byte, self->items, (self->len + self->free) * sz, (self->len + len) * sz);
         self->free = 0;
 
@@ -515,6 +542,8 @@ static mp_obj_t array_subscr(mp_obj_t self_in, mp_obj_t index_in, mp_obj_t value
                 #endif
                 if (len_adj > 0) {
                     if ((size_t)len_adj > o->free) {
+                        // Check if resize is allowed (no active memoryviews)
+                        array_check_can_resize(o);
                         // TODO: alloc policy; at the moment we go conservative
                         o->items = m_renew(byte, o->items, (o->len + o->free) * item_sz, (o->len + len_adj) * item_sz);
                         o->free = len_adj;
@@ -599,6 +628,10 @@ static mp_int_t array_get_buffer(mp_obj_t o_in, mp_buffer_info_t *bufinfo, mp_ui
             return 1;
         }
         bufinfo->buf = (uint8_t *)bufinfo->buf + (size_t)o->memview_offset * sz;
+    } else {
+        // Mark non-memoryview arrays as having an exported buffer.
+        // This prevents resize operations that would invalidate memoryviews.
+        o->typecode |= MP_OBJ_ARRAY_TYPECODE_FLAG_VIEW_EXPORTED;
     }
     #else
     (void)flags;

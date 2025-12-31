@@ -1063,7 +1063,9 @@ typedef double mp_float_t;
 // By default, extended date support is only enabled for machines using 64 bit pointers,
 // but it can be enabled by specific ports
 #ifndef MICROPY_TIME_SUPPORT_Y1969_AND_BEFORE
-#if MP_SSIZE_MAX > 2147483647
+// Check for 64-bit platform using pointer size (SSIZE_MAX may not be defined yet)
+// On 64-bit platforms, enable extended date support by default
+#if UINTPTR_MAX > 0xFFFFFFFF
 #define MICROPY_TIME_SUPPORT_Y1969_AND_BEFORE (1)
 #else
 #define MICROPY_TIME_SUPPORT_Y1969_AND_BEFORE (0)

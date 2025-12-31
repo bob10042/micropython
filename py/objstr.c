@@ -945,15 +945,32 @@ MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(str_rstrip_obj, 1, 2, str_rstrip);
 static mp_obj_t str_center(mp_obj_t str_in, mp_obj_t width_in) {
     GET_STR_DATA_LEN(str_in, str, str_len);
     mp_uint_t width = mp_obj_get_int(width_in);
-    if (str_len >= width) {
+
+    // Get character length - for unicode strings this may differ from byte length
+    size_t char_len = str_len;
+    #if MICROPY_PY_BUILTINS_STR_UNICODE
+    if (mp_obj_is_str(str_in)) {
+        char_len = utf8_charlen(str, str_len);
+    }
+    #endif
+
+    // If string is already wide enough (in characters), return it unchanged
+    if (char_len >= width) {
         return str_in;
     }
 
+    // Calculate padding needed (in characters)
+    size_t total_pad = width - char_len;
+    size_t left_pad = total_pad / 2;
+    size_t right_pad = total_pad - left_pad;
+
+    // Build output: left padding + original string + right padding
+    // Output size is: left_pad spaces (1 byte each) + str_len bytes + right_pad spaces
     vstr_t vstr;
-    vstr_init_len(&vstr, width);
-    memset(vstr.buf, ' ', width);
-    int left = (width - str_len) / 2;
-    memcpy(vstr.buf + left, str, str_len);
+    vstr_init_len(&vstr, left_pad + str_len + right_pad);
+    memset(vstr.buf, ' ', left_pad);
+    memcpy(vstr.buf + left_pad, str, str_len);
+    memset(vstr.buf + left_pad + str_len, ' ', right_pad);
     return mp_obj_new_str_type_from_vstr(mp_obj_get_type(str_in), &vstr);
 }
 MP_DEFINE_CONST_FUN_OBJ_2(str_center_obj, str_center);
