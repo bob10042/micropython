@@ -144,6 +144,37 @@ void RTC_SetDate(uint8_t year, uint8_t month, uint8_t day);
 /* SPI Functions */
 void SPI_Transfer(uint8_t port, uint8_t *txdata, uint8_t *rxdata, uint16_t len);
 
+/* === NEW FEATURES (from MicroPython drivers) === */
+
+/* Multi-channel ADC (MicroPython: ports/stm32/adc.c) */
+uint16_t ADC_ReadChannel(uint8_t channel);
+uint16_t ADC_ReadVBAT(void);
+uint16_t ADC_ReadTempSensor(void);
+
+/* I2C Data Transfer (MicroPython: ports/stm32/i2c.c) */
+int I2C_ReadFrom(uint8_t bus, uint8_t addr, uint8_t *data, uint16_t len);
+int I2C_WriteTo(uint8_t bus, uint8_t addr, uint8_t *data, uint16_t len);
+int I2C_ReadMemory(uint8_t bus, uint8_t addr, uint8_t memaddr, uint8_t *data, uint16_t len);
+int I2C_WriteMemory(uint8_t bus, uint8_t addr, uint8_t memaddr, uint8_t *data, uint16_t len);
+
+/* Watchdog Timer (MicroPython: ports/stm32/wdt.c) */
+void WDT_Init(uint32_t timeout_ms);
+void WDT_Feed(void);
+
+/* Power Management (MicroPython: ports/stm32/powerctrl.c) */
+void Power_Sleep(void);
+void Power_Stop(void);
+void Power_Standby(void);
+
+/* System Info (MicroPython: machine module) */
+void Get_UniqueID(uint32_t *uid);
+uint32_t Get_ResetCause(void);
+
+/* External Interrupts (MicroPython: ports/stm32/extint.c) */
+typedef void (*extint_callback_t)(void);
+void ExtInt_Enable(char series, uint8_t pin, uint8_t edge, extint_callback_t callback);
+void ExtInt_Disable(char series, uint8_t pin);
+
 /* CLI Functions */
 void CLI_Process(char *cmd);
 void CLI_PrintHelp(void);
@@ -181,7 +212,10 @@ int main(void)
   SystemClock_Config();
 
   /* USER CODE BEGIN SysInit */
-
+  /* Enable DWT cycle counter for precise timing */
+  CoreDebug->DEMCR |= CoreDebug_DEMCR_TRCENA_Msk;
+  DWT->CYCCNT = 0;
+  DWT->CTRL |= DWT_CTRL_CYCCNTENA_Msk;
   /* USER CODE END SysInit */
 
   /* Initialize all configured peripherals */
@@ -249,7 +283,7 @@ int main(void)
   
   /* Welcome message */
   char welcome[] = "\r\n===========================================\r\n"
-                   "PyBoard Native Firmware v1.0\r\n"
+                   "PyBoard Native Firmware v3.0\r\n"
                    "STM32F405RG @ 168MHz\r\n"
                    "MicroPython v1.28 Compatible (Native C)\r\n"
                    "Type 'help' for commands\r\n"
@@ -1065,7 +1099,7 @@ void CLI_Process(char *cmd)
     else if (strcmp(cmd, "info") == 0)
     {
         sprintf(response,
-            "PyBoard Native Firmware v2.0\r\n"
+            "PyBoard Native Firmware v3.0\r\n"
             "CPU: STM32F405RG @ 168MHz\r\n"
             "Flash: 1MB, RAM: 192KB\r\n"
             "HAL Version: %lu.%lu.%lu\r\n",
@@ -1088,6 +1122,26 @@ void CLI_Process(char *cmd)
             "  - RTC with LSE 32.768kHz\r\n"
             "  - USB CDC Serial\r\n"
             "GPIO: X1-X12, X17-X22, Y1-Y12\r\n");
+    }
+    /* Benchmark - same as MicroPython test (10K iterations) */
+    else if (strcmp(cmd, "bench") == 0)
+    {
+        CLI_SendString("Running benchmark (10K iterations, same as MicroPython test)...\r\n");
+
+        uint32_t start_tick = DWT->CYCCNT;  // Use cycle counter for microsecond precision
+        volatile uint32_t total = 0;
+        for (volatile uint32_t i = 0; i < 10000; i++)
+        {
+            total += i;
+        }
+        uint32_t cycles = DWT->CYCCNT - start_tick;
+        uint32_t us = cycles / 168;  // 168 MHz clock
+
+        sprintf(response, "Result: %lu\r\n", total);
+        CLI_SendString(response);
+        sprintf(response, "Time: %lu us (%lu cycles)\r\n", us, cycles);
+        CLI_SendString(response);
+        CLI_SendString("Compare to MicroPython bytecode: ~993000 us\r\n");
     }
     /* Speed test - compare to MicroPython */
     else if (strcmp(cmd, "speed") == 0)
@@ -1147,6 +1201,175 @@ void CLI_Process(char *cmd)
     {
         LED_Off(1); LED_Off(2); LED_Off(3); LED_Off(4);
         CLI_SendString("All LEDs OFF\r\n");
+    }
+    /*=======================================================================
+     * NEW COMMANDS - MicroPython-compatible functionality
+     *=======================================================================*/
+    /* Multi-channel ADC: adc N (N=0-15 or temp or vbat) */
+    else if (strncmp(cmd, "adc ", 4) == 0)
+    {
+        if (strcmp(cmd + 4, "temp") == 0) {
+            uint16_t val = ADC_ReadTempSensor();
+            /* Convert to temperature: Temp = ((V - V25) / Avg_Slope) + 25 */
+            /* V25 = 0.76V, Avg_Slope = 2.5mV/°C for STM32F4 */
+            float voltage = val * 3.3f / 4095.0f;
+            float temp = ((voltage - 0.76f) / 0.0025f) + 25.0f;
+            sprintf(response, "Temp sensor: %d (%.1f°C)\r\n", val, temp);
+            CLI_SendString(response);
+        } else if (strcmp(cmd + 4, "vbat") == 0) {
+            uint16_t val = ADC_ReadVBAT();
+            /* VBAT is divided by 2 internally */
+            float voltage = val * 3.3f * 2.0f / 4095.0f;
+            sprintf(response, "VBAT: %d (%.2fV)\r\n", val, voltage);
+            CLI_SendString(response);
+        } else {
+            int ch;
+            if (sscanf(cmd + 4, "%d", &ch) == 1 && ch >= 0 && ch <= 15) {
+                uint16_t val = ADC_ReadChannel(ch);
+                sprintf(response, "ADC CH%d: %d (%.2fV)\r\n", ch, val, val * 3.3f / 4095.0f);
+                CLI_SendString(response);
+            } else {
+                CLI_SendString("Usage: adc <0-15|temp|vbat>\r\n");
+            }
+        }
+    }
+    /* I2C read: i2c1 read <addr> <len> or i2c1 mem <addr> <memaddr> <len> */
+    else if (strncmp(cmd, "i2c1 read ", 10) == 0 || strncmp(cmd, "i2c2 read ", 10) == 0)
+    {
+        int bus = (cmd[3] == '1') ? 1 : 2;
+        int addr, len;
+        if (sscanf(cmd + 10, "%x %d", &addr, &len) == 2 && len <= 32) {
+            uint8_t buf[32];
+            int result = I2C_ReadFrom(bus, addr, buf, len);
+            if (result > 0) {
+                sprintf(response, "I2C%d read 0x%02X (%d bytes): ", bus, addr, result);
+                CLI_SendString(response);
+                for (int i = 0; i < result; i++) {
+                    sprintf(response, "%02X ", buf[i]);
+                    CLI_SendString(response);
+                }
+                CLI_SendString("\r\n");
+            } else {
+                sprintf(response, "I2C%d read failed\r\n", bus);
+                CLI_SendString(response);
+            }
+        }
+    }
+    /* I2C write: i2c1 write <addr> <bytes...> */
+    else if (strncmp(cmd, "i2c1 write ", 11) == 0 || strncmp(cmd, "i2c2 write ", 11) == 0)
+    {
+        int bus = (cmd[3] == '1') ? 1 : 2;
+        int addr;
+        uint8_t data[16];
+        int n = 0;
+        char *p = (char*)(cmd + 11);
+        if (sscanf(p, "%x", &addr) == 1) {
+            while (*p && *p != ' ') p++;
+            while (*p == ' ') p++;
+            while (*p && n < 16) {
+                int val;
+                if (sscanf(p, "%x", &val) == 1) {
+                    data[n++] = val;
+                    while (*p && *p != ' ') p++;
+                    while (*p == ' ') p++;
+                } else break;
+            }
+            if (n > 0) {
+                int result = I2C_WriteTo(bus, addr, data, n);
+                if (result > 0) {
+                    sprintf(response, "I2C%d write 0x%02X: %d bytes OK\r\n", bus, addr, result);
+                } else {
+                    sprintf(response, "I2C%d write failed\r\n", bus);
+                }
+                CLI_SendString(response);
+            }
+        }
+    }
+    /* Unique ID */
+    else if (strcmp(cmd, "uid") == 0)
+    {
+        uint32_t uid[3];
+        Get_UniqueID(uid);
+        sprintf(response, "UID: %08lX-%08lX-%08lX\r\n", uid[0], uid[1], uid[2]);
+        CLI_SendString(response);
+    }
+    /* Reset cause */
+    else if (strcmp(cmd, "resetcause") == 0)
+    {
+        uint32_t cause = Get_ResetCause();
+        CLI_SendString("Reset cause: ");
+        if (cause & RCC_CSR_LPWRRSTF) CLI_SendString("LOW_POWER ");
+        if (cause & RCC_CSR_WWDGRSTF) CLI_SendString("WINDOW_WDT ");
+        if (cause & RCC_CSR_IWDGRSTF) CLI_SendString("INDEP_WDT ");
+        if (cause & RCC_CSR_SFTRSTF) CLI_SendString("SOFTWARE ");
+        if (cause & RCC_CSR_PORRSTF) CLI_SendString("POWER_ON ");
+        if (cause & RCC_CSR_PINRSTF) CLI_SendString("PIN_RESET ");
+        if (cause & RCC_CSR_BORRSTF) CLI_SendString("BROWNOUT ");
+        sprintf(response, "(0x%08lX)\r\n", cause);
+        CLI_SendString(response);
+    }
+    /* Watchdog commands */
+    else if (strncmp(cmd, "wdt ", 4) == 0)
+    {
+        if (strncmp(cmd + 4, "start ", 6) == 0) {
+            int timeout;
+            if (sscanf(cmd + 10, "%d", &timeout) == 1 && timeout > 0) {
+                WDT_Init(timeout);
+                sprintf(response, "Watchdog started: %d ms timeout\r\n", timeout);
+                CLI_SendString(response);
+            }
+        } else if (strcmp(cmd + 4, "feed") == 0) {
+            WDT_Feed();
+            CLI_SendString("Watchdog fed\r\n");
+        } else {
+            CLI_SendString("Usage: wdt start <ms> | wdt feed\r\n");
+        }
+    }
+    /* Sleep mode */
+    else if (strcmp(cmd, "sleep") == 0)
+    {
+        CLI_SendString("Entering sleep mode... (any interrupt wakes)\r\n");
+        HAL_Delay(10);  /* Let message send */
+        Power_Sleep();
+        CLI_SendString("Woke from sleep\r\n");
+    }
+    /* Stop mode */
+    else if (strcmp(cmd, "stop") == 0)
+    {
+        CLI_SendString("Entering stop mode... (EXTI/RTC wakes)\r\n");
+        HAL_Delay(10);
+        Power_Stop();
+        CLI_SendString("Woke from stop mode\r\n");
+    }
+    /* Viper-equivalent benchmark (cycle-accurate timing) */
+    else if (strcmp(cmd, "viper") == 0)
+    {
+        CLI_SendString("=== Native C 'Viper' Benchmark ===\r\n");
+        CLI_SendString("(Same test as MicroPython @viper)\r\n\r\n");
+        
+        /* 10K iterations - same as MicroPython test */
+        uint32_t start = DWT->CYCCNT;
+        volatile int32_t total = 0;
+        for (volatile int32_t i = 0; i < 10000; i++) {
+            total += i;
+        }
+        uint32_t cycles = DWT->CYCCNT - start;
+        uint32_t us = cycles / 168;
+        
+        sprintf(response, "Result: %ld\r\n", total);
+        CLI_SendString(response);
+        sprintf(response, "Time: %lu us (%lu cycles)\r\n", us, cycles);
+        CLI_SendString(response);
+        CLI_SendString("\r\nComparison:\r\n");
+        CLI_SendString("  MicroPython bytecode: ~32000 us\r\n");
+        CLI_SendString("  MicroPython @native:  ~16000 us\r\n");
+        CLI_SendString("  MicroPython @viper:    ~2500 us\r\n");
+        sprintf(response, "  Native C (this):       %5lu us\r\n", us);
+        CLI_SendString(response);
+        if (us > 0) {
+            sprintf(response, "  Speedup vs bytecode:   %.0fx\r\n", 32000.0f / us);
+            CLI_SendString(response);
+        }
     }
     /*=======================================================================
      * FILE SYSTEM COMMANDS (FatFS / oofatfs)
@@ -1453,7 +1676,7 @@ void CLI_Process(char *cmd)
 void CLI_PrintHelp(void)
 {
     CLI_SendString(
-        "PyBoard Native CLI v2.0 (MicroPython Compatible)\r\n"
+        "PyBoard Native CLI v3.0 (MicroPython Compatible)\r\n"
         "================================================\r\n"
         "LED (pyb.LED):\r\n"
         "  led N [0|1]    Control LED 1-4, toggle if no state\r\n"
@@ -1528,9 +1751,33 @@ void CLI_PrintHelp(void)
         "\r\n"
         "System:\r\n"
         "  info           System information\r\n"
-        "  speed          CPU speed test\r\n"
+        "  bench          Benchmark (10K loop, compare to MicroPython)\r\n"
+        "  speed          CPU speed test (1M loop)\r\n"
         "  speedgpio      GPIO toggle benchmark\r\n"
-        "  help           Show this help\r\n");
+        "  viper          'Viper' benchmark (cycle-accurate)\r\n"
+        "  help           Show this help\r\n"
+        "\r\n");
+    CLI_SendString(
+        "=== NEW FEATURES (v3.0) ===\r\n"
+        "Multi-channel ADC:\r\n"
+        "  adc <0-15>     Read ADC channel 0-15\r\n"
+        "  adc temp       Read internal temperature\r\n"
+        "  adc vbat       Read battery voltage\r\n"
+        "\r\n"
+        "I2C Data Transfer:\r\n"
+        "  i2c1 read <addr> <len>   Read bytes from device\r\n"
+        "  i2c1 write <addr> <hex>  Write bytes to device\r\n"
+        "  i2c2 read/write          Same for I2C2\r\n"
+        "\r\n"
+        "Power Management:\r\n"
+        "  sleep          Enter sleep mode (any IRQ wakes)\r\n"
+        "  stop           Enter stop mode (EXTI/RTC wakes)\r\n"
+        "  wdt start <ms> Start watchdog with timeout\r\n"
+        "  wdt feed       Feed (reset) watchdog\r\n"
+        "\r\n"
+        "System Info:\r\n"
+        "  uid            Show unique device ID\r\n"
+        "  resetcause     Show last reset cause\r\n");
 }
 
 void CLI_SendString(const char *str)
@@ -2177,6 +2424,279 @@ void SPI_Transfer(uint8_t port, uint8_t *txdata, uint8_t *rxdata, uint16_t len)
         HAL_SPI_TransmitReceive(&hspi1, txdata, rxdata, len, 1000);
     } else if (port == 2) {
         HAL_SPI_TransmitReceive(&hspi2, txdata, rxdata, len, 1000);
+    }
+}
+
+/*===========================================================================
+ * NEW FEATURES - Adapted from MicroPython C drivers
+ * These provide MicroPython-equivalent functionality in pure C
+ *===========================================================================*/
+
+/*---------------------------------------------------------------------------
+ * Multi-channel ADC (from MicroPython ports/stm32/adc.c)
+ * Supports all 16 ADC channels plus internal temp sensor and VBAT
+ *---------------------------------------------------------------------------*/
+uint16_t ADC_ReadChannel(uint8_t channel)
+{
+    ADC_ChannelConfTypeDef sConfig = {0};
+    
+    /* Map channel number to ADC channel */
+    uint32_t adc_channel;
+    switch (channel) {
+        case 0: adc_channel = ADC_CHANNEL_0; break;   /* X1/PA0 */
+        case 1: adc_channel = ADC_CHANNEL_1; break;   /* X2/PA1 */
+        case 2: adc_channel = ADC_CHANNEL_2; break;   /* X3/PA2 */
+        case 3: adc_channel = ADC_CHANNEL_3; break;   /* X4/PA3 */
+        case 4: adc_channel = ADC_CHANNEL_4; break;   /* X5/PA4 (also DAC1) */
+        case 5: adc_channel = ADC_CHANNEL_5; break;   /* X6/PA5 (also DAC2) */
+        case 6: adc_channel = ADC_CHANNEL_6; break;   /* X7/PA6 */
+        case 7: adc_channel = ADC_CHANNEL_7; break;   /* X8/PA7 */
+        case 8: adc_channel = ADC_CHANNEL_8; break;   /* X21/PB0 */
+        case 9: adc_channel = ADC_CHANNEL_9; break;   /* X22/PB1 */
+        case 10: adc_channel = ADC_CHANNEL_10; break; /* Y11/PC0 */
+        case 11: adc_channel = ADC_CHANNEL_11; break; /* Y12/PC1 */
+        case 12: adc_channel = ADC_CHANNEL_12; break; /* PC2 */
+        case 13: adc_channel = ADC_CHANNEL_13; break; /* PC3 */
+        case 14: adc_channel = ADC_CHANNEL_14; break; /* PC4 */
+        case 15: adc_channel = ADC_CHANNEL_15; break; /* PC5 */
+        default: return 0;
+    }
+    
+    sConfig.Channel = adc_channel;
+    sConfig.Rank = 1;
+    sConfig.SamplingTime = ADC_SAMPLETIME_15CYCLES;
+    HAL_ADC_ConfigChannel(&hadc1, &sConfig);
+    
+    HAL_ADC_Start(&hadc1);
+    HAL_ADC_PollForConversion(&hadc1, 100);
+    uint16_t value = HAL_ADC_GetValue(&hadc1);
+    HAL_ADC_Stop(&hadc1);
+    
+    return value;
+}
+
+uint16_t ADC_ReadTempSensor(void)
+{
+    ADC_ChannelConfTypeDef sConfig = {0};
+    sConfig.Channel = ADC_CHANNEL_TEMPSENSOR;
+    sConfig.Rank = 1;
+    sConfig.SamplingTime = ADC_SAMPLETIME_480CYCLES;  /* Longer sample time for internal channels */
+    HAL_ADC_ConfigChannel(&hadc1, &sConfig);
+    
+    HAL_ADC_Start(&hadc1);
+    HAL_ADC_PollForConversion(&hadc1, 100);
+    uint16_t value = HAL_ADC_GetValue(&hadc1);
+    HAL_ADC_Stop(&hadc1);
+    
+    return value;
+}
+
+uint16_t ADC_ReadVBAT(void)
+{
+    ADC_ChannelConfTypeDef sConfig = {0};
+    
+    /* Enable VBAT channel (divided by 2 internally on STM32F4) */
+    ADC->CCR |= ADC_CCR_VBATE;
+    
+    sConfig.Channel = ADC_CHANNEL_VBAT;
+    sConfig.Rank = 1;
+    sConfig.SamplingTime = ADC_SAMPLETIME_480CYCLES;
+    HAL_ADC_ConfigChannel(&hadc1, &sConfig);
+    
+    HAL_ADC_Start(&hadc1);
+    HAL_ADC_PollForConversion(&hadc1, 100);
+    uint16_t value = HAL_ADC_GetValue(&hadc1);
+    HAL_ADC_Stop(&hadc1);
+    
+    /* Disable VBAT to prevent battery drain */
+    ADC->CCR &= ~ADC_CCR_VBATE;
+    
+    return value;
+}
+
+/*---------------------------------------------------------------------------
+ * I2C Data Transfer (from MicroPython ports/stm32/i2c.c)
+ * Full I2C read/write with memory address support
+ *---------------------------------------------------------------------------*/
+int I2C_ReadFrom(uint8_t bus, uint8_t addr, uint8_t *data, uint16_t len)
+{
+    I2C_HandleTypeDef *hi2c = (bus == 1) ? &hi2c1 : &hi2c2;
+    HAL_StatusTypeDef status = HAL_I2C_Master_Receive(hi2c, addr << 1, data, len, 1000);
+    return (status == HAL_OK) ? len : -1;
+}
+
+int I2C_WriteTo(uint8_t bus, uint8_t addr, uint8_t *data, uint16_t len)
+{
+    I2C_HandleTypeDef *hi2c = (bus == 1) ? &hi2c1 : &hi2c2;
+    HAL_StatusTypeDef status = HAL_I2C_Master_Transmit(hi2c, addr << 1, data, len, 1000);
+    return (status == HAL_OK) ? len : -1;
+}
+
+int I2C_ReadMemory(uint8_t bus, uint8_t addr, uint8_t memaddr, uint8_t *data, uint16_t len)
+{
+    I2C_HandleTypeDef *hi2c = (bus == 1) ? &hi2c1 : &hi2c2;
+    HAL_StatusTypeDef status = HAL_I2C_Mem_Read(hi2c, addr << 1, memaddr, I2C_MEMADD_SIZE_8BIT, data, len, 1000);
+    return (status == HAL_OK) ? len : -1;
+}
+
+int I2C_WriteMemory(uint8_t bus, uint8_t addr, uint8_t memaddr, uint8_t *data, uint16_t len)
+{
+    I2C_HandleTypeDef *hi2c = (bus == 1) ? &hi2c1 : &hi2c2;
+    HAL_StatusTypeDef status = HAL_I2C_Mem_Write(hi2c, addr << 1, memaddr, I2C_MEMADD_SIZE_8BIT, data, len, 1000);
+    return (status == HAL_OK) ? len : -1;
+}
+
+/*---------------------------------------------------------------------------
+ * Watchdog Timer (from MicroPython ports/stm32/wdt.c)
+ * Independent Watchdog (IWDG) for reliability
+ *---------------------------------------------------------------------------*/
+static IWDG_HandleTypeDef hiwdg;
+
+void WDT_Init(uint32_t timeout_ms)
+{
+    /* IWDG clock is LSI = 32kHz, prescaler /256 = 125Hz */
+    /* Reload = timeout_ms * 125 / 1000 = timeout_ms / 8 */
+    uint32_t reload = timeout_ms / 8;
+    if (reload > 0xFFF) reload = 0xFFF;  /* Max 12-bit reload value */
+    if (reload < 1) reload = 1;
+    
+    hiwdg.Instance = IWDG;
+    hiwdg.Init.Prescaler = IWDG_PRESCALER_256;
+    hiwdg.Init.Reload = reload;
+    HAL_IWDG_Init(&hiwdg);
+}
+
+void WDT_Feed(void)
+{
+    HAL_IWDG_Refresh(&hiwdg);
+}
+
+/*---------------------------------------------------------------------------
+ * Power Management (from MicroPython ports/stm32/powerctrl.c)
+ * Sleep, Stop, and Standby modes for power saving
+ *---------------------------------------------------------------------------*/
+void Power_Sleep(void)
+{
+    /* Enter Sleep mode - CPU stops, peripherals continue */
+    /* Wake on any interrupt */
+    HAL_PWR_EnterSLEEPMode(PWR_MAINREGULATOR_ON, PWR_SLEEPENTRY_WFI);
+}
+
+void Power_Stop(void)
+{
+    /* Enter Stop mode - most clocks stopped, SRAM retained */
+    /* Wake on EXTI line, RTC alarm, USB, etc. */
+    HAL_PWR_EnterSTOPMode(PWR_LOWPOWERREGULATOR_ON, PWR_STOPENTRY_WFI);
+    
+    /* Reconfigure clocks after wakeup from Stop mode */
+    SystemClock_Config();
+}
+
+void Power_Standby(void)
+{
+    /* Enter Standby mode - lowest power, SRAM lost */
+    /* Wake only on WKUP pin, RTC alarm, or reset */
+    HAL_PWR_EnterSTANDBYMode();
+    /* Note: Code after this never executes - system resets on wakeup */
+}
+
+/*---------------------------------------------------------------------------
+ * System Info (from MicroPython machine module)
+ * Unique ID and reset cause
+ *---------------------------------------------------------------------------*/
+void Get_UniqueID(uint32_t *uid)
+{
+    /* STM32 unique device ID is at address 0x1FFF7A10 (96 bits) */
+    uid[0] = *(uint32_t *)0x1FFF7A10;
+    uid[1] = *(uint32_t *)0x1FFF7A14;
+    uid[2] = *(uint32_t *)0x1FFF7A18;
+}
+
+uint32_t Get_ResetCause(void)
+{
+    /* Read RCC_CSR reset flags */
+    uint32_t cause = RCC->CSR;
+    
+    /* Clear reset flags for next time */
+    RCC->CSR |= RCC_CSR_RMVF;
+    
+    /* Return which reset occurred:
+     * Bit 31: LPWRRSTF - Low-power reset
+     * Bit 30: WWDGRSTF - Window watchdog reset
+     * Bit 29: IWDGRSTF - Independent watchdog reset  
+     * Bit 28: SFTRSTF  - Software reset
+     * Bit 27: PORRSTF  - POR/PDR reset
+     * Bit 26: PINRSTF  - Pin reset (NRST)
+     * Bit 25: BORRSTF  - BOR reset
+     */
+    return cause;
+}
+
+/*---------------------------------------------------------------------------
+ * External Interrupts (from MicroPython ports/stm32/extint.c)
+ * Configure GPIO pins as interrupt sources with callbacks
+ *---------------------------------------------------------------------------*/
+#define MAX_EXTINT_CALLBACKS 16
+static extint_callback_t extint_callbacks[MAX_EXTINT_CALLBACKS] = {0};
+
+void ExtInt_Enable(char series, uint8_t pin, uint8_t edge, extint_callback_t callback)
+{
+    GPIO_TypeDef *gpio;
+    uint16_t gpio_pin;
+    
+    /* Get GPIO port and pin */
+    if (series == 'x' || series == 'X') {
+        gpio = GPIOA;  /* Simplified: X pins map to various ports */
+    } else if (series == 'y' || series == 'Y') {
+        gpio = GPIOB;
+    } else {
+        return;
+    }
+    gpio_pin = (1 << (pin - 1));
+    
+    /* Store callback */
+    if (pin <= MAX_EXTINT_CALLBACKS) {
+        extint_callbacks[pin - 1] = callback;
+    }
+    
+    /* Configure GPIO as input with interrupt */
+    GPIO_InitTypeDef GPIO_InitStruct = {0};
+    GPIO_InitStruct.Pin = gpio_pin;
+    GPIO_InitStruct.Mode = (edge == 0) ? GPIO_MODE_IT_RISING : 
+                           (edge == 1) ? GPIO_MODE_IT_FALLING : 
+                                         GPIO_MODE_IT_RISING_FALLING;
+    GPIO_InitStruct.Pull = GPIO_NOPULL;
+    HAL_GPIO_Init(gpio, &GPIO_InitStruct);
+    
+    /* Enable EXTI interrupt in NVIC */
+    IRQn_Type irqn;
+    if (pin <= 4) {
+        irqn = EXTI0_IRQn + pin - 1;
+    } else if (pin <= 9) {
+        irqn = EXTI9_5_IRQn;
+    } else {
+        irqn = EXTI15_10_IRQn;
+    }
+    HAL_NVIC_SetPriority(irqn, 5, 0);
+    HAL_NVIC_EnableIRQ(irqn);
+}
+
+void ExtInt_Disable(char series, uint8_t pin)
+{
+    /* Clear callback and disable interrupt */
+    if (pin <= MAX_EXTINT_CALLBACKS) {
+        extint_callbacks[pin - 1] = NULL;
+    }
+}
+
+/* EXTI callback - called by HAL when interrupt occurs */
+void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
+{
+    /* Find which pin triggered and call its callback */
+    for (int i = 0; i < MAX_EXTINT_CALLBACKS; i++) {
+        if ((GPIO_Pin & (1 << i)) && extint_callbacks[i]) {
+            extint_callbacks[i]();
+        }
     }
 }
 

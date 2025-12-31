@@ -1,8 +1,22 @@
-# PyBoard v1.1 Native C Firmware v2.0
+# PyBoard v1.1 Native C Firmware v3.0
 
 Native C firmware for PyBoard v1.1 (STM32F405RG) - replaces MicroPython for maximum performance.
 
 ## Project Status: ✅ FULLY FUNCTIONAL - MicroPython Compatible
+
+**Latest Version:** v3.0 (December 28, 2025)  
+**Firmware Size:** 290KB (hex) / 103KB (binary)
+
+### What's New in v3.0
+- Multi-channel ADC (0-15 + temp sensor + VBAT)
+- I2C data transfer (read/write bytes)
+- Watchdog timer (IWDG)
+- Power management (sleep/stop modes)
+- Unique device ID and reset cause
+- Viper-style cycle-accurate benchmark
+- Full FatFS file system support
+
+See [RELEASE_NOTES_v3.0.md](RELEASE_NOTES_v3.0.md) for complete details.
 
 All peripherals matching MicroPython pyb module:
 - USB CDC serial communication (REPL-like CLI)
@@ -33,6 +47,15 @@ All peripherals matching MicroPython pyb module:
 Location: `C:\Users\bob43\STM32Cube\Repository\STM32Cube_FW_F4_V1.28.0`
 
 ⚠️ **DO NOT use MicroPython's HAL library** from `lib/stm32lib/` - it is an older version with incompatible USB and CAN APIs that will cause USB enumeration failure.
+
+### STM32 HAL Library Reference (stm32lib/)
+This project includes a local clone of [micropython/stm32lib](https://github.com/micropython/stm32lib) in the `stm32lib/` subdirectory. This repository contains:
+- **CMSIS** device headers for all supported STM32 families
+- **HAL Drivers** for STM32F0, F4, F7, G0, G4, H5, H7, L0, L1, L4, N6, U5, WB, WL
+
+**Current Version (December 2025):** `work-F0-1.9.0+F4-1.16.0+F7-1.7.0+G0-1.5.1+G4-1.3.0+H5-1.0.0+H7-1.11.0+L0-1.11.2+L1-1.10.3+L4-1.17.0+N6-1.2.0+U5-1.8.0+WB-1.23.0+WL-1.1.0`
+
+**Note:** The main MicroPython repository's `lib/stm32lib` submodule has been verified to be on the same version. For this PyBoard_Native project, we use the official STM32CubeF4 V1.28.0 from STMicroelectronics (not this stm32lib) due to USB/CAN API compatibility requirements. The stm32lib is included for reference and potential future migration.
 
 ## Building
 
