@@ -1,0 +1,7 @@
+load NUCLEO-F429ZI
+project name STM32_Blink
+project path C:/Users/bob43/Documents/STM32_Blink
+project toolchain STM32CubeIDE
+SetCopyLibrary "copy only necessary library files"
+GenerateCode
+exit

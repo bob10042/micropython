@@ -1,0 +1,6 @@
+config load C:/Users/bob43/Documents/STM32_Full/STM32_Full.ioc
+project name STM32_Full
+project toolchain STM32CubeIDE
+project path C:/Users/bob43/Documents/STM32_Full
+generate code C:/Users/bob43/Documents/STM32_Full
+exit

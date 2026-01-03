@@ -67,10 +67,10 @@ static mp_obj_t array_extend(mp_obj_t self_in, mp_obj_t arg_in);
 static mp_int_t array_get_buffer(mp_obj_t o_in, mp_buffer_info_t *bufinfo, mp_uint_t flags);
 
 #if MICROPY_PY_BUILTINS_MEMORYVIEW
-// Check if array can be resized. Raises BufferError if memoryview may reference it.
+// Check if array can be resized. Raises error if memoryview may reference it.
 static void array_check_can_resize(mp_obj_array_t *self) {
     if (self->typecode & MP_OBJ_ARRAY_TYPECODE_FLAG_VIEW_EXPORTED) {
-        mp_raise_msg(&mp_type_BufferError, MP_ERROR_TEXT("cannot resize array with exported buffer"));
+        mp_raise_msg(&mp_type_ValueError, MP_ERROR_TEXT("cannot resize array with exported buffer"));
     }
 }
 #else

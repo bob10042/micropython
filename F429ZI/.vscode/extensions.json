@@ -1,0 +1,11 @@
+{
+  "recommendations": [
+    "stmicroelectronics.stm32cube-ide-core",
+    "stmicroelectronics.stm32cube-ide-project-manager",
+    "stmicroelectronics.stm32cube-ide-debug-generic-gdbserver",
+    "stmicroelectronics.stm32cube-ide-clangd",
+    "stmicroelectronics.stm32cube-ide-build-analyzer",
+    "stmicroelectronics.stm32cube-ide-bundles-manager",
+    "stmicroelectronics.stm32cube-ide-build-cmake"
+  ]
+}

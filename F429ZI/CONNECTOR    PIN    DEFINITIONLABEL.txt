@@ -1,0 +1,105 @@
+CONNECTOR    PIN    DEFINITION/LABEL    PRIMARY FUNCTION/NOTE
+--------------------------------------------------------------
+CN7          1      PC6                 D16
+CN7          2      PB8                 D15 (SCL)
+CN7          3      PB15                D17
+CN7          4      PB9                 D14 (SDA)
+CN7          5      PB13                D18
+CN7          6      AVDD                AVDD
+CN7          7      PB12                D19
+CN7          8      GND                 GND
+CN7          9      PA15                D20
+CN7          10     PA5                 D13
+CN7          11     PC7                 D21
+CN7          12     PA6                 D12
+CN7          13     PB5                 D22
+CN7          14     PA7                 D11 (Ethernet conflict)
+CN7          15     PB3                 D23
+CN7          16     PD14                D10
+CN7          17     PA4                 D24
+CN7          18     PD15                D9
+CN7          19     PB4                 D25
+CN7          20     PF12                D8 (No PWM)
+
+CN8          1      NC                  NC
+CN8          2      PC8                 D43
+CN8          3      IOREF               IOREF
+CN8          4      PC9                 D44
+CN8          5      RESET               RESET
+CN8          6      PC10                D45
+CN8          7      +3.3V               +3.3V
+CN8          8      PC11                D46
+CN8          9      +5V                 +5V
+CN8          10     PC12                D47 (Serial 5 Tx)
+CN8          11     GND                 GND
+CN8          12     PD2                 D48 (Serial 5 Rx)
+CN8          13     GND                 GND
+CN8          14     PG2                 D49
+CN8          15     VIN                 VIN
+CN8          16     PG3                 D50
+
+CN9          1      PA3                 A0 / D51
+CN9          2      PD7                 D51
+CN9          3      PC0                 A1 / D52
+CN9          4      PD6                 D52 (Serial 2 Rx)
+CN9          5      PC3                 A2 / D53
+CN9          6      PD5                 D53 (Serial 2 Tx)
+CN9          7      PF3                 A3 / D54
+CN9          8      PD4                 D54
+CN9          9      PF5                 A4 / D55
+CN9          10     PD3                 D55
+CN9          11     PF10                A5 / GND
+CN9          12     GND                 GND
+CN9          13     NC                  NC
+CN9          14     PE2                 D31 (Avoid D56)
+CN9          15     PA7                 D71 (Ethernet conflict)
+CN9          16     PE4                 D57
+CN9          17     PF2                 D70
+CN9          18     PE5                 D58
+CN9          19     PF1                 D69
+CN9          20     PE6                 D59
+CN9          21     PF0                 D68
+CN9          22     PE3                 D60
+CN9          23     GND                 GND
+CN9          24     PF8                 D61
+CN9          25     PD0                 D67
+CN9          26     PF7                 D62
+CN9          27     PD1                 D66
+CN9          28     PF9                 D63
+CN9          29     PG0                 D65
+CN9          30     PG1                 D64
+
+CN10         1      AVDD                AVDD
+CN10         2      PF13                D7 (No PWM)
+CN10         3      AGND                AGND
+CN10         4      PE9                 D6
+CN10         5      GND                 GND
+CN10         6      PE11                D5
+CN10         7      PB1                 A6
+CN10         8      PF14                D4
+CN10         9      PC2                 A7
+CN10         10     PE13                D3
+CN10         11     PF4                 A8
+CN10         12     PF15                D2
+CN10         13     PB6                 D26
+CN10         14     PG14                D1 (Serial 6 Tx)
+CN10         15     PB2                 D27
+CN10         16     PG9                 D0 (Serial 6 Rx)
+CN10         17     GND                 GND
+CN10         18     PE8                 D42
+CN10         19     PD13                D28
+CN10         20     PE7                 D41
+CN10         21     PD12                D29
+CN10         22     GND                 GND
+CN10         23     PD11                D30
+CN10         24     PE10                D40
+CN10         25     PE2                 D31
+CN10         26     PE12                D39
+CN10         27     GND                 GND
+CN10         28     PE14                D38
+CN10         29     PA0                 D32
+CN10         30     PE15                D37
+CN10         31     PB0                 D33
+CN10         32     PB10                D36
+CN10         33     PE0                 D34
+CN10         34     PB11                D35

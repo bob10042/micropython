@@ -1,0 +1,7 @@
+{
+  "terminal.integrated.env.windows": {
+    "ARM_GCC_BIN": "C:\\Program Files (x86)\\Arm GNU Toolchain arm-none-eabi\\14.2 rel1\\bin",
+    "MAKE_BIN": "C:\\msys64\\mingw64\\bin",
+    "STM32PROG_CLI": "C:\\Program Files\\STMicroelectronics\\STM32Cube\\STM32CubeProgrammer\\bin\\STM32_Programmer_CLI.exe"
+  }
+}
