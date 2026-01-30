@@ -220,6 +220,7 @@ typedef struct _vfs_posix_ilistdir_it_t {
     mp_fun_1_t finaliser;
     bool is_str;
     DIR *dir;
+    char *path;  // Store base path for stat() calls
 } vfs_posix_ilistdir_it_t;
 
 static mp_obj_t vfs_posix_ilistdir_it_iternext(mp_obj_t self_in) {
@@ -246,8 +247,8 @@ static mp_obj_t vfs_posix_ilistdir_it_iternext(mp_obj_t self_in) {
             continue;
         }
 
-        // make 3-tuple with info about this entry
-        mp_obj_tuple_t *t = MP_OBJ_TO_PTR(mp_obj_new_tuple(3, NULL));
+        // make 4-tuple with info about this entry (name, type, inode, size)
+        mp_obj_tuple_t *t = MP_OBJ_TO_PTR(mp_obj_new_tuple(4, NULL));
 
         if (self->is_str) {
             t->items[0] = mp_obj_new_str_from_cstr(fn);
@@ -278,6 +279,33 @@ static mp_obj_t vfs_posix_ilistdir_it_iternext(mp_obj_t self_in) {
         t->items[2] = MP_OBJ_NEW_SMALL_INT(0);
         #endif
 
+        // Get filesize by stat'ing the file
+        mp_int_t size = 0;
+        if (self->path != NULL) {
+            // Build full path
+            size_t path_len = strlen(self->path);
+            size_t fn_len = strlen(fn);
+            bool needs_sep = (path_len > 0 && self->path[path_len - 1] != '/');
+            size_t full_len = path_len + (needs_sep ? 1 : 0) + fn_len;
+            char *full_path = m_new(char, full_len + 1);
+            
+            memcpy(full_path, self->path, path_len);
+            size_t pos = path_len;
+            if (needs_sep) {
+                full_path[pos++] = '/';
+            }
+            memcpy(full_path + pos, fn, fn_len);
+            full_path[full_len] = '\0';
+            
+            // Stat the file to get size
+            struct stat st;
+            if (stat(full_path, &st) == 0) {
+                size = st.st_size;
+            }
+            m_del(char, full_path, full_len + 1);
+        }
+        t->items[3] = mp_obj_new_int_from_uint(size);
+
         return MP_OBJ_FROM_PTR(t);
     }
 }
@@ -288,6 +316,10 @@ static mp_obj_t vfs_posix_ilistdir_it_del(mp_obj_t self_in) {
         MP_THREAD_GIL_EXIT();
         closedir(self->dir);
         MP_THREAD_GIL_ENTER();
+    }
+    if (self->path != NULL) {
+        m_del(char, self->path, strlen(self->path) + 1);
+        self->path = NULL;
     }
     return mp_const_none;
 }
@@ -302,10 +334,16 @@ static mp_obj_t vfs_posix_ilistdir(mp_obj_t self_in, mp_obj_t path_in) {
     if (path[0] == '\0') {
         path = ".";
     }
+    // Store path for stat() calls
+    size_t path_len = strlen(path);
+    iter->path = m_new(char, path_len + 1);
+    memcpy(iter->path, path, path_len + 1);
+    
     MP_THREAD_GIL_EXIT();
     iter->dir = opendir(path);
     MP_THREAD_GIL_ENTER();
     if (iter->dir == NULL) {
+        m_del(char, iter->path, path_len + 1);
         mp_raise_OSError(errno);
     }
     return MP_OBJ_FROM_PTR(iter);
@@ -367,6 +405,10 @@ static mp_obj_t vfs_posix_stat(mp_obj_t self_in, mp_obj_t path_in) {
     mp_obj_vfs_posix_t *self = MP_OBJ_TO_PTR(self_in);
     struct stat sb;
     const char *path = vfs_posix_get_path_str(self, path_in);
+    // Handle empty string as current directory (consistent with MCU ports)
+    if (path[0] == '\0') {
+        path = ".";
+    }
     int ret;
     MP_HAL_RETRY_SYSCALL(ret, stat(path, &sb), mp_raise_OSError(err));
     mp_obj_tuple_t *t = MP_OBJ_TO_PTR(mp_obj_new_tuple(10, NULL));
