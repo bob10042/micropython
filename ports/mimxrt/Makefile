@@ -113,6 +113,7 @@ SRC_ETH_C += \
 	$(MCUX_SDK_DIR)/drivers/enet/fsl_enet.c \
 	hal/phy/device/phydp83825/fsl_phydp83825.c \
 	hal/phy/device/phydp83848/fsl_phydp83848.c \
+	hal/phy/device/phydp83867/fsl_phydp83867.c \
 	hal/phy/device/phyksz8081/fsl_phyksz8081.c \
 	hal/phy/device/phylan8720/fsl_phylan8720.c \
 	hal/phy/device/phyrtl8211f/fsl_phyrtl8211f.c \
@@ -311,6 +312,11 @@ ifeq ($(USE_UF2_BOOTLOADER),1)
 	CFLAGS += -DMICROPY_MACHINE_UF2_BOOTLOADER=1
 endif
 
+# Set the default size of the VfsRom file system. Can be changed at board level
+ifeq ($(MICROPY_HW_ROMFS_BYTES),)
+	MICROPY_HW_ROMFS_BYTES ?= 0x40000
+endif
+
 # Add sources for respective board flash type
 # Add hal/flexspi_nor_flash.c or hal/flashspi_hyper_flash.c respectively
 SRC_HAL_C += hal/flexspi_$(subst qspi_,,$(FLEXSPI_FLASH_TYPE)).c
@@ -494,9 +500,10 @@ LDFLAGS += \
 # LDDEFINES are used for link time adaptation of linker scripts, utilizing
 #	the C preprocessor. Therefore keep LDDEFINES separated from LDFLAGS!
 
-LDDEFINES = \
+LDDEFINES += \
 	-DMICROPY_HW_FLASH_BASE=$(MICROPY_HW_FLASH_BASE) \
-	-DMICROPY_HW_FLASH_SIZE=$(MICROPY_HW_FLASH_SIZE)
+	-DMICROPY_HW_FLASH_SIZE=$(MICROPY_HW_FLASH_SIZE) \
+	-DMICROPY_HW_ROMFS_BYTES=$(MICROPY_HW_ROMFS_BYTES)
 
 ifdef MICROPY_HW_FLASH_RESERVED
 LDDEFINES += -DMICROPY_HW_FLASH_RESERVED=$(MICROPY_HW_FLASH_RESERVED)

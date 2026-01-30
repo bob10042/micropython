@@ -95,6 +95,7 @@ static mp_obj_t mp_time_sleep(mp_obj_t arg) {
     tv.tv_sec = (suseconds_t)ipart;
     int res;
     while (1) {
+        mp_handle_pending(true);
         MP_THREAD_GIL_EXIT();
         res = sleep_select(0, NULL, NULL, NULL, &tv);
         MP_THREAD_GIL_ENTER();
@@ -105,13 +106,6 @@ static mp_obj_t mp_time_sleep(mp_obj_t arg) {
         if (res != -1 || errno != EINTR) {
             break;
         }
-        #else
-        // On non-Linux, we might sleep longer than intended if interrupted,
-        // or we need to manually recalculate remaining time.
-        // For now, just break to avoid infinite loops if tv is not updated.
-        break;
-        #endif
-        mp_handle_pending(true);
         // printf("select: EINTR: %ld:%ld\n", tv.tv_sec, tv.tv_usec);
         #else
         break;
@@ -121,13 +115,13 @@ static mp_obj_t mp_time_sleep(mp_obj_t arg) {
     #else
     int seconds = mp_obj_get_int(arg);
     for (;;) {
+        mp_handle_pending(true);
         MP_THREAD_GIL_EXIT();
         seconds = sleep(seconds);
         MP_THREAD_GIL_ENTER();
         if (seconds == 0) {
             break;
         }
-        mp_handle_pending(true);
     }
     #endif
     return mp_const_none;
