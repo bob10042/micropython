@@ -636,7 +636,14 @@ void spi_transfer(const spi_t *self, size_t len, const uint8_t *src, uint8_t *de
                 len -= l;
                 src += l;
             } while (len);
+            if (status != HAL_OK) {
+                // Stop the DMA and the SPI so the transfer no longer touches the buffer.
+                HAL_SPI_Abort(self->spi);
+            }
             dma_deinit(self->tx_dma_descr);
+            // The DMA handles are on the stack, don't leave references to them.
+            self->spi->hdmatx = NULL;
+            self->spi->hdmarx = NULL;
         }
     } else if (src == NULL) {
         // receive only
@@ -668,11 +675,18 @@ void spi_transfer(const spi_t *self, size_t len, const uint8_t *src, uint8_t *de
                 len -= l;
                 dest += l;
             } while (len);
+            if (status != HAL_OK) {
+                // Stop the DMA and the SPI so the transfer no longer touches the buffer.
+                HAL_SPI_Abort(self->spi);
+            }
             if (self->spi->hdmatx != NULL) {
                 dma_deinit(self->tx_dma_descr);
             }
             dma_deinit(self->rx_dma_descr);
             dma_unprotect_rx_region(odest, olen);
+            // The DMA handles are on the stack, don't leave references to them.
+            self->spi->hdmatx = NULL;
+            self->spi->hdmarx = NULL;
         }
     } else {
         // send and receive
@@ -701,9 +715,16 @@ void spi_transfer(const spi_t *self, size_t len, const uint8_t *src, uint8_t *de
                 src += l;
                 dest += l;
             } while (len);
+            if (status != HAL_OK) {
+                // Stop the DMA and the SPI so the transfer no longer touches the buffer.
+                HAL_SPI_Abort(self->spi);
+            }
             dma_deinit(self->tx_dma_descr);
             dma_deinit(self->rx_dma_descr);
             dma_unprotect_rx_region(odest, olen);
+            // The DMA handles are on the stack, don't leave references to them.
+            self->spi->hdmatx = NULL;
+            self->spi->hdmarx = NULL;
         }
     }
 
