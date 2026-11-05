@@ -332,7 +332,30 @@ static inline void set_aligned_basic(uint val_type, void *p, mp_uint_t v) {
     assert(0);
 }
 
+// On some CPUs (eg Cortex-M4) 64-bit and floating-point loads and stores fault
+// on an address that is not aligned for the type, unlike smaller integer ones.
+// Returns the address of element index if it is such a value and misaligned, so
+// the caller can access it byte-wise instead, or NULL otherwise.
+static byte *get_misaligned_wide_addr(uint val_type, void *p, mp_int_t index) {
+    if (val_type == UINT64 || val_type == INT64
+        #if MICROPY_PY_BUILTINS_FLOAT
+        || val_type == FLOAT32 || val_type == FLOAT64
+        #endif
+        ) {
+        mp_uint_t size = uctypes_struct_scalar_size(val_type);
+        byte *addr = (byte *)p + index * size;
+        if ((uintptr_t)addr & (size - 1)) {
+            return addr;
+        }
+    }
+    return NULL;
+}
+
 static mp_obj_t get_aligned(uint val_type, void *p, mp_int_t index) {
+    byte *misaligned = get_misaligned_wide_addr(val_type, p, index);
+    if (misaligned != NULL) {
+        return get_unaligned(val_type, misaligned, MP_ENDIANNESS_BIG);
+    }
     switch (val_type) {
         case UINT8:
             return MP_OBJ_NEW_SMALL_INT(((uint8_t *)p)[index]);
@@ -363,6 +386,11 @@ static mp_obj_t get_aligned(uint val_type, void *p, mp_int_t index) {
 }
 
 static void set_aligned(uint val_type, void *p, mp_int_t index, mp_obj_t val) {
+    byte *misaligned = get_misaligned_wide_addr(val_type, p, index);
+    if (misaligned != NULL) {
+        set_unaligned(val_type, misaligned, MP_ENDIANNESS_BIG, val);
+        return;
+    }
     #if MICROPY_PY_BUILTINS_FLOAT
     if (val_type == FLOAT32 || val_type == FLOAT64) {
         if (val_type == FLOAT32) {
