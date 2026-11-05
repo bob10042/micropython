@@ -29,6 +29,17 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+// Highest APB bus clocks the MCU allows, where known.  machine.freq() refuses
+// bus clocks above these, and the boot code ignores saved settings above them.
+#if defined(STM32F405xx) || defined(STM32F415xx) || defined(STM32F407xx) || defined(STM32F417xx)
+#ifndef MICROPY_HW_CLK_APB1_MAX
+#define MICROPY_HW_CLK_APB1_MAX (42000000)
+#endif
+#ifndef MICROPY_HW_CLK_APB2_MAX
+#define MICROPY_HW_CLK_APB2_MAX (84000000)
+#endif
+#endif
+
 #if defined(STM32WB)
 void stm32_system_init(void);
 #else

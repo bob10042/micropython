@@ -410,6 +410,11 @@ static uint32_t calc_apb2_div(uint32_t wanted_div) {
 #if defined(STM32F4) || defined(STM32F7) || defined(STM32G0) || defined(STM32G4) || defined(STM32H5) || defined(STM32H7) || defined(STM32U5)
 
 int powerctrl_set_sysclk(uint32_t sysclk, uint32_t ahb, uint32_t apb1, uint32_t apb2) {
+    // The bus clocks are used as divisors below
+    if (ahb == 0 || apb1 == 0 || apb2 == 0) {
+        return -MP_EINVAL;
+    }
+
     // Return straight away if the clocks are already at the desired frequency
     if (sysclk == HAL_RCC_GetSysClockFreq()
         && ahb == HAL_RCC_GetHCLKFreq()
@@ -499,6 +504,14 @@ set_clk:
     RCC_ClkInitStruct.SYSCLKDivider = RCC_SYSCLK_DIV1;
     RCC_ClkInitStruct.APB3CLKDivider = MICROPY_HW_CLK_APB3_DIV;
     RCC_ClkInitStruct.APB4CLKDivider = MICROPY_HW_CLK_APB4_DIV;
+    #endif
+
+    #if defined(STM32F4) && defined(MICROPY_HW_CLK_APB1_MAX) && defined(MICROPY_HW_CLK_APB2_MAX)
+    // Refuse bus clocks above the MCU's limits, before anything is changed
+    if ((ahb >> APBPrescTable[RCC_ClkInitStruct.APB1CLKDivider >> RCC_CFGR_PPRE1_Pos]) > MICROPY_HW_CLK_APB1_MAX
+        || (ahb >> APBPrescTable[RCC_ClkInitStruct.APB2CLKDivider >> RCC_CFGR_PPRE1_Pos]) > MICROPY_HW_CLK_APB2_MAX) {
+        return -MP_EINVAL;
+    }
     #endif
 
     #if MICROPY_HW_CLK_LAST_FREQ

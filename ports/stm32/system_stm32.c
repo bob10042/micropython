@@ -352,7 +352,18 @@ MP_WEAK void SystemClock_Config(void) {
     p = (((m >> 16) & 0x03) + 1) * 2;
     n = (m >> 6) & 0x3ff;
     m &= 0x3f;
-    if ((q < 2) || (q > 15) || (p > 8) || (p < 2) || (n < 192) || (n >= 433) || (m < 2)) {
+    bool freq_ok = !((q < 2) || (q > 15) || (p > 8) || (p < 2) || (n < 192) || (n >= 433) || (m < 2));
+    #if defined(STM32F4) && defined(MICROPY_HW_CLK_APB1_MAX) && defined(MICROPY_HW_CLK_APB2_MAX)
+    if (freq_ok) {
+        // Also check the saved bus dividers against the MCU's limits
+        uint32_t ahb = (MICROPY_HW_CLK_VALUE / m / p * n) >> AHBPrescTable[h];
+        if ((ahb >> APBPrescTable[b1]) > MICROPY_HW_CLK_APB1_MAX
+            || (ahb >> APBPrescTable[b2]) > MICROPY_HW_CLK_APB2_MAX) {
+            freq_ok = false;
+        }
+    }
+    #endif
+    if (!freq_ok) {
         m = MICROPY_HW_CLK_PLLM;
         n = MICROPY_HW_CLK_PLLN;
         p = MICROPY_HW_CLK_PLLP;
