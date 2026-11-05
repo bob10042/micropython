@@ -88,9 +88,16 @@ int mp_irq_dispatch(mp_obj_t handler, mp_obj_t parent, bool ishard) {
                 mp_call_function_1(handler, parent);
                 nlr_pop();
             } else {
-                mp_printf(MICROPY_ERROR_PRINTER, "Uncaught exception in IRQ callback handler\n");
-                mp_obj_print_exception(MICROPY_ERROR_PRINTER, MP_OBJ_FROM_PTR(nlr.ret_val));
                 result = -1;
+                // Print inside its own nlr handler: this can run near the stack limit, and if
+                // printing raises too (eg RecursionError) the exception must not propagate out
+                // of the interrupt to the interrupted code, leaving the GC and scheduler locked.
+                nlr_buf_t nlr_print;
+                if (nlr_push(&nlr_print) == 0) {
+                    mp_printf(MICROPY_ERROR_PRINTER, "Uncaught exception in IRQ callback handler\n");
+                    mp_obj_print_exception(MICROPY_ERROR_PRINTER, MP_OBJ_FROM_PTR(nlr.ret_val));
+                    nlr_pop();
+                }
             }
             gc_unlock();
             mp_sched_unlock();

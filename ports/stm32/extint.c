@@ -867,8 +867,15 @@ void Handle_EXTI_Irq(uint32_t line) {
                     // Uncaught exception; disable the callback so it doesn't run again.
                     *cb = mp_const_none;
                     extint_disable(line);
-                    mp_printf(MICROPY_ERROR_PRINTER, "uncaught exception in ExtInt interrupt handler line %u\n", (unsigned int)line);
-                    mp_obj_print_exception(&mp_plat_print, MP_OBJ_FROM_PTR(nlr.ret_val));
+                    // Print inside its own nlr handler: this can run near the stack limit, and if
+                    // printing raises too (eg RecursionError) the exception must not propagate out
+                    // of the interrupt to the interrupted code, leaving the GC and scheduler locked.
+                    nlr_buf_t nlr_print;
+                    if (nlr_push(&nlr_print) == 0) {
+                        mp_printf(MICROPY_ERROR_PRINTER, "uncaught exception in ExtInt interrupt handler line %u\n", (unsigned int)line);
+                        mp_obj_print_exception(&mp_plat_print, MP_OBJ_FROM_PTR(nlr.ret_val));
+                        nlr_pop();
+                    }
                 }
                 gc_unlock();
                 mp_sched_unlock();

@@ -939,8 +939,15 @@ void pyb_can_irq_handler(uint can_id,  can_int_t interrupt, can_rx_fifo_t fifo) 
         } else {
             // Uncaught exception; disable the callback so it doesn't run again.
             pyb_can_rxcallback(MP_OBJ_FROM_PTR(self), MP_OBJ_NEW_SMALL_INT(fifo), mp_const_none);
-            mp_printf(MICROPY_ERROR_PRINTER, "uncaught exception in CAN(%u) rx interrupt handler\n", self->can_id);
-            mp_obj_print_exception(&mp_plat_print, MP_OBJ_FROM_PTR(nlr.ret_val));
+            // Print inside its own nlr handler: this can run near the stack limit, and if
+            // printing raises too (eg RecursionError) the exception must not propagate out
+            // of the interrupt to the interrupted code, leaving the GC and scheduler locked.
+            nlr_buf_t nlr_print;
+            if (nlr_push(&nlr_print) == 0) {
+                mp_printf(MICROPY_ERROR_PRINTER, "uncaught exception in CAN(%u) rx interrupt handler\n", self->can_id);
+                mp_obj_print_exception(&mp_plat_print, MP_OBJ_FROM_PTR(nlr.ret_val));
+                nlr_pop();
+            }
         }
         gc_unlock();
         mp_sched_unlock();
