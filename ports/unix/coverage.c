@@ -642,6 +642,12 @@ static mp_obj_t extra_coverage(void) {
         mpz_as_int_checked(&mpz, &value_signed);
         mp_printf(&mp_plat_print, "%d\n", (int)value_signed);
 
+        // mpz_shl_inpl with dest==lhs and a shift of 0, which calls mpz_set(dest, dest)
+        mpz_set_from_int(&mpz, 12345);
+        mpz_shl_inpl(&mpz, &mpz, 0);
+        mpz_as_int_checked(&mpz, &value_signed);
+        mp_printf(&mp_plat_print, "%d\n", (int)value_signed);
+
         // hash the zero mpz integer
         mpz_set_from_int(&mpz, 0);
         mp_printf(&mp_plat_print, "%d\n", (int)mpz_hash(&mpz));

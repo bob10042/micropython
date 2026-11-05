@@ -705,6 +705,10 @@ static mpz_t *mpz_clone(const mpz_t *src) {
    can have dest, src the same
 */
 void mpz_set(mpz_t *dest, const mpz_t *src) {
+    if (dest == src) {
+        // nothing to do, and memcpy must not be given overlapping buffers
+        return;
+    }
     mpz_need_dig(dest, src->len);
     dest->neg = src->neg;
     dest->len = src->len;
