@@ -411,7 +411,11 @@ void usbd_cdc_tx_always(usbd_cdc_itf_t *cdc, const uint8_t *buf, uint32_t len) {
             uint32_t start = HAL_GetTick();
             while (!cdc->tx_always_stalled && usbd_cdc_tx_buffer_full(cdc)) {
                 if (HAL_GetTick() - start > 500) {
-                    cdc->tx_always_stalled = true;
+                    // Only mark as stalled if the USB IRQ has not just drained a
+                    // packet (and cleared the flag) since the buffer was checked
+                    uint32_t basepri = raise_irq_pri(IRQ_PRI_OTG_FS);
+                    cdc->tx_always_stalled = usbd_cdc_tx_buffer_full(cdc);
+                    restore_irq_pri(basepri);
                     break;
                 }
                 usbd_cdc_try_tx(cdc);
