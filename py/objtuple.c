@@ -30,6 +30,7 @@
 
 #include "py/objtuple.h"
 #include "py/runtime.h"
+#include "py/cstack.h"
 
 /******************************************************************************/
 /* tuple                                                                      */
@@ -135,6 +136,8 @@ mp_obj_t mp_obj_tuple_unary_op(mp_unary_op_t op, mp_obj_t self_in) {
         case MP_UNARY_OP_HASH: {
             // start hash with pointer to empty tuple, to make it fairly unique
             mp_int_t hash = (mp_int_t)mp_const_empty_tuple;
+            // hashing nested tuples recurses, so check the stack
+            mp_cstack_check();
             for (size_t i = 0; i < self->len; i++) {
                 hash += MP_OBJ_SMALL_INT_VALUE(mp_unary_op(MP_UNARY_OP_HASH, self->items[i]));
             }

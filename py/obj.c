@@ -261,6 +261,8 @@ mp_obj_t mp_obj_equal_not_equal(mp_binary_op_t op, mp_obj_t o1, mp_obj_t o2) {
     }
 
     // generic type, call binary_op(MP_BINARY_OP_EQUAL)
+    // This can recurse (eg nested lists, tuples or dicts), so check the stack.
+    mp_cstack_check();
     while (pass_number < 2) {
         const mp_obj_type_t *type = mp_obj_get_type(o1);
         // If a full equality test is not needed and the other object is a different
