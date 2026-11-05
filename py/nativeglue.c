@@ -230,6 +230,22 @@ static bool mp_native_yield_from(mp_obj_t gen, mp_obj_t send_value, mp_obj_t *re
     return false;
 }
 
+// Viper calls these directly for int // and %, so they must check for a zero
+// divisor themselves (the callers in runtime.c check before calling the helpers).
+static mp_int_t mp_native_small_int_floor_divide(mp_int_t num, mp_int_t denom) {
+    if (denom == 0) {
+        mp_raise_msg(&mp_type_ZeroDivisionError, MP_ERROR_TEXT("divide by zero"));
+    }
+    return mp_small_int_floor_divide(num, denom);
+}
+
+static mp_int_t mp_native_small_int_modulo(mp_int_t dividend, mp_int_t divisor) {
+    if (divisor == 0) {
+        mp_raise_msg(&mp_type_ZeroDivisionError, MP_ERROR_TEXT("divide by zero"));
+    }
+    return mp_small_int_modulo(dividend, divisor);
+}
+
 #if !MICROPY_PY_BUILTINS_FLOAT
 
 static mp_obj_t mp_obj_new_float_from_f(float f) {
@@ -306,8 +322,8 @@ const mp_fun_table_t mp_fun_table = {
     mp_obj_new_closure,
     mp_arg_check_num_sig,
     mp_setup_code_state_native,
-    mp_small_int_floor_divide,
-    mp_small_int_modulo,
+    mp_native_small_int_floor_divide,
+    mp_native_small_int_modulo,
     mp_native_yield_from,
     #if MICROPY_NLR_SETJMP
     setjmp,
