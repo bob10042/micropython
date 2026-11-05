@@ -890,10 +890,18 @@ static uint8_t USBD_CDC_MSC_HID_Setup(USBD_HandleTypeDef *pdev, USBD_SetupReqTyp
                 if (req->wLength) {
                     if (req->bmRequest & 0x80) {
                         // device-to-host request
-                        usbd_cdc_control(cdc, req->bRequest, (uint8_t*)cdc->ctl_packet_buf, req->wLength);
-                        USBD_CtlSendData(pdev, (uint8_t*)cdc->ctl_packet_buf, req->wLength);
+                        // Send no more than the control buffer holds (a device
+                        // may return less data than wLength asks for)
+                        uint16_t len = MIN(req->wLength, sizeof(cdc->ctl_packet_buf));
+                        usbd_cdc_control(cdc, req->bRequest, (uint8_t*)cdc->ctl_packet_buf, len);
+                        USBD_CtlSendData(pdev, (uint8_t*)cdc->ctl_packet_buf, len);
                     } else {
                         // host-to-device request
+                        if (req->wLength > sizeof(cdc->ctl_packet_buf)) {
+                            // Data does not fit in the control buffer: stall the request
+                            USBD_CtlError(pdev, req);
+                            return USBD_FAIL;
+                        }
                         cdc->cur_request = req->bRequest;
                         cdc->cur_length = req->wLength;
                         USBD_CtlPrepareRx(pdev, (uint8_t*)cdc->ctl_packet_buf, req->wLength);
