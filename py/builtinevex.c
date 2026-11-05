@@ -109,12 +109,14 @@ static mp_obj_t mp_builtin_compile(size_t n_args, const mp_obj_t *args) {
 
     #if MICROPY_PY_BUILTINS_CODE >= MICROPY_PY_BUILTINS_CODE_BASIC
 
+    // mp_parse frees the lexer, so get the source name first
+    qstr source_name = lex->source_name;
     mp_parse_tree_t parse_tree = mp_parse(lex, parse_input_kind);
     mp_module_context_t ctx;
     ctx.module.globals = NULL;
     mp_compiled_module_t cm;
     cm.context = &ctx;
-    mp_compile_to_raw_code(&parse_tree, lex->source_name, parse_input_kind == MP_PARSE_SINGLE_INPUT, &cm);
+    mp_compile_to_raw_code(&parse_tree, source_name, parse_input_kind == MP_PARSE_SINGLE_INPUT, &cm);
 
     #if MICROPY_PY_BUILTINS_CODE >= MICROPY_PY_BUILTINS_CODE_FULL
     mp_module_context_t *ctx_ptr = m_new_obj(mp_module_context_t);
