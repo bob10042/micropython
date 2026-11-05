@@ -590,6 +590,10 @@ static HAL_StatusTypeDef spi_wait_dma_finished(const spi_t *spi, uint32_t t_star
         uint32_t irq_state = disable_irq();
         if (*state == HAL_SPI_STATE_READY) {
             enable_irq(irq_state);
+            // A DMA error also sets the state to READY, so check the error code.
+            if (spi->spi->ErrorCode != HAL_SPI_ERROR_NONE) {
+                return HAL_ERROR;
+            }
             return HAL_OK;
         }
         __WFI();
