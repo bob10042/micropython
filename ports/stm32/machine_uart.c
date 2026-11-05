@@ -271,8 +271,10 @@ static void mp_machine_uart_init_helper(machine_uart_obj_t *self, size_t n_args,
         }
         uart_set_rxbuf(self, self->read_buf_len, self->read_buf);
     } else {
-        // setup the read buffer
-        m_del(byte, self->read_buf, self->read_buf_len << self->char_width);
+        // setup the read buffer: allocate the new one before freeing the old one, so
+        // that a failed allocation doesn't leave read_buf pointing to freed memory
+        uint8_t *old_buf = self->read_buf;
+        size_t old_buf_len = self->read_buf_len;
         if (args.rxbuf.u_int >= 0) {
             // rxbuf overrides legacy read_buf_len
             args.read_buf_len.u_int = args.rxbuf.u_int;
@@ -286,6 +288,7 @@ static void mp_machine_uart_init_helper(machine_uart_obj_t *self, size_t n_args,
             uint8_t *buf = m_new(byte, len << self->char_width);
             uart_set_rxbuf(self, len, buf);
         }
+        m_del(byte, old_buf, old_buf_len << self->char_width);
     }
 
     // compute actual baudrate that was configured
