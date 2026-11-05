@@ -30,6 +30,7 @@
 
 #include <stdlib.h>
 #include <string.h>
+#include "py/mperrno.h"
 #include "py/mphal.h"
 #include "pin.h"
 #include "dma.h"
@@ -97,6 +98,17 @@ typedef struct _machine_i2s_obj_t {
 } machine_i2s_obj_t;
 
 static mp_obj_t machine_i2s_deinit(mp_obj_t self_in);
+
+// Called while a blocking read/write waits on the ring buffer.  The ring buffer
+// is only serviced by the DMA callbacks, which stop after a DMA error, so stop
+// waiting if the HAL recorded an error.  Also allow Ctrl-C and scheduled events.
+static void mp_machine_i2s_blocking_wait(machine_i2s_obj_t *self) {
+    if (self->hi2s.ErrorCode != HAL_I2S_ERROR_NONE) {
+        mp_raise_OSError(MP_EIO);
+    }
+    mp_event_handle_nowait();
+}
+#define MICROPY_PY_MACHINE_I2S_BLOCKING_WAIT_HOOK(self) mp_machine_i2s_blocking_wait(self)
 
 // The frame map is used with the readinto() method to transform the audio sample data coming
 // from DMA memory (32-bit stereo) to the format specified

@@ -127,6 +127,12 @@ static void mp_machine_i2s_irq_update(machine_i2s_obj_t *self);
 // The port provides implementations of the above in this file.
 #include MICROPY_PY_MACHINE_I2S_INCLUDEFILE
 
+// A port can define this to be called while a blocking read/write waits on the
+// ring buffer, eg to handle pending events and to stop waiting after an error.
+#ifndef MICROPY_PY_MACHINE_I2S_BLOCKING_WAIT_HOOK
+#define MICROPY_PY_MACHINE_I2S_BLOCKING_WAIT_HOOK(self)
+#endif
+
 #if MICROPY_PY_MACHINE_I2S_RING_BUF
 
 // Ring Buffer
@@ -209,7 +215,7 @@ static uint32_t fill_appbuf_from_ringbuf(machine_i2s_obj_t *self, mp_buffer_info
                 if (self->io_mode == BLOCKING) {
                     // poll the ringbuf until a sample becomes available,  copy into appbuf using the mapping transform
                     while (ringbuf_pop(&self->ring_buffer, app_p + r_to_a_mapping) == false) {
-                        ;
+                        MICROPY_PY_MACHINE_I2S_BLOCKING_WAIT_HOOK(self);
                     }
                     num_bytes_copied_to_appbuf++;
                 } else if (self->io_mode == ASYNCIO) {
@@ -227,7 +233,7 @@ static uint32_t fill_appbuf_from_ringbuf(machine_i2s_obj_t *self, mp_buffer_info
                 if (self->io_mode == BLOCKING) {
                     // poll the ringbuf until a sample becomes available
                     while (ringbuf_pop(&self->ring_buffer, &discard_byte) == false) {
-                        ;
+                        MICROPY_PY_MACHINE_I2S_BLOCKING_WAIT_HOOK(self);
                     }
                 } else if (self->io_mode == ASYNCIO) {
                     if (ringbuf_pop(&self->ring_buffer, &discard_byte) == false) {
@@ -300,7 +306,7 @@ static uint32_t copy_appbuf_to_ringbuf(machine_i2s_obj_t *self, mp_buffer_info_t
         if (self->io_mode == BLOCKING) {
             // copy a byte to the ringbuf when space becomes available
             while (ringbuf_push(&self->ring_buffer, ((uint8_t *)appbuf->buf)[a_index]) == false) {
-                ;
+                MICROPY_PY_MACHINE_I2S_BLOCKING_WAIT_HOOK(self);
             }
             a_index++;
         } else if (self->io_mode == ASYNCIO) {
