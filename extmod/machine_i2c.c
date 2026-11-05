@@ -486,9 +486,15 @@ static mp_obj_t machine_i2c_writevto(size_t n_args, const mp_obj_t *args) {
     bool stop = (n_args == 3) ? true : mp_obj_is_true(args[3]);
 
     // Extract all buffer data, skipping zero-length buffers
+    // A few buffers go on the C stack; the number comes from the caller, so
+    // any more go on the heap.
     size_t alloc = nitems == 0 ? 1 : nitems;
     size_t nbufs = 0;
-    mp_machine_i2c_buf_t *bufs = mp_local_alloc(alloc * sizeof(mp_machine_i2c_buf_t));
+    mp_machine_i2c_buf_t bufs_stack[4];
+    mp_machine_i2c_buf_t *bufs = bufs_stack;
+    if (alloc > MP_ARRAY_SIZE(bufs_stack)) {
+        bufs = m_new(mp_machine_i2c_buf_t, alloc);
+    }
     for (; nitems--; ++items) {
         mp_buffer_info_t bufinfo;
         mp_get_buffer_raise(*items, &bufinfo, MP_BUFFER_READ);
@@ -508,7 +514,9 @@ static mp_obj_t machine_i2c_writevto(size_t n_args, const mp_obj_t *args) {
     // Do the I2C transfer
     mp_machine_i2c_p_t *i2c_p = (mp_machine_i2c_p_t *)MP_OBJ_TYPE_GET_SLOT(self->type, protocol);
     int ret = i2c_p->transfer(self, addr, nbufs, bufs, stop ? MP_MACHINE_I2C_FLAG_STOP : 0);
-    mp_local_free(bufs);
+    if (bufs != bufs_stack) {
+        m_del(mp_machine_i2c_buf_t, bufs, alloc);
+    }
 
     if (ret < 0) {
         mp_raise_OSError(-ret);

@@ -633,9 +633,11 @@ static mp_obj_t framebuf_poly(size_t n_args, const mp_obj_t *args_in) {
             y_max = MAX(y_max, py);
         }
 
+        // Each node is the x coordinate where an edge crosses a scan line.
+        // n_poly comes from the caller's buffer, so the nodes go on the heap.
+        mp_int_t *nodes = m_new(mp_int_t, n_poly);
+
         for (mp_int_t row = y_min; row <= y_max; row++) {
-            // Each node is the x coordinate where an edge crosses this scan line.
-            mp_int_t nodes[n_poly];
             int n_nodes = 0;
             mp_int_t px1 = poly_int(&bufinfo, 0);
             mp_int_t py1 = poly_int(&bufinfo, 1);
@@ -693,6 +695,8 @@ static mp_obj_t framebuf_poly(size_t n_args, const mp_obj_t *args_in) {
                 fill_rect(self, x + nodes[i], y + row, (nodes[i + 1] - nodes[i]) + 1, 1, col);
             }
         }
+
+        m_del(mp_int_t, nodes, n_poly);
     } else {
         // Outline only.
         mp_int_t px1 = poly_int(&bufinfo, 0);

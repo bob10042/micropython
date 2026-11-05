@@ -56,7 +56,9 @@ static mp_obj_t signal_make_new(const mp_obj_type_t *type, size_t n_args, size_t
         // If first argument isn't a Pin-like object, we filter out "invert"
         // from keyword arguments and pass them all to the exported Pin
         // constructor to create one.
-        mp_obj_t *pin_args = mp_local_alloc((n_args + n_kw * 2) * sizeof(mp_obj_t));
+        // The number of arguments comes from the caller, so copy them on the heap.
+        size_t pin_args_len = n_args + n_kw * 2;
+        mp_obj_t *pin_args = m_new(mp_obj_t, pin_args_len);
         memcpy(pin_args, args, n_args * sizeof(mp_obj_t));
         const mp_obj_t *src = args + n_args;
         mp_obj_t *dst = pin_args + n_args;
@@ -87,7 +89,7 @@ static mp_obj_t signal_make_new(const mp_obj_type_t *type, size_t n_args, size_t
         // to expose port's "default" pin type too.
         pin = MICROPY_PY_MACHINE_PIN_MAKE_NEW(NULL, n_args, n_kw, pin_args);
 
-        mp_local_free(pin_args);
+        m_del(mp_obj_t, pin_args, pin_args_len);
     } else
     #endif
     // Otherwise there should be 1 or 2 args

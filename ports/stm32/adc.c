@@ -768,6 +768,12 @@ static MP_DEFINE_CONST_FUN_OBJ_3(adc_read_timed_obj, adc_read_timed);
 // the sample resolution will be reduced to 8 bits.
 //
 // This function should not allocate any heap memory.
+
+// The buffer pointers are kept on the C stack, so their number is limited.
+#ifndef ADC_READ_TIMED_MULTI_MAX
+#define ADC_READ_TIMED_MULTI_MAX (32)
+#endif
+
 static mp_obj_t adc_read_timed_multi(mp_obj_t adc_array_in, mp_obj_t buf_array_in, mp_obj_t tim_in) {
     size_t nadcs, nbufs;
     mp_obj_t *adc_array, *buf_array;
@@ -780,13 +786,19 @@ static mp_obj_t adc_read_timed_multi(mp_obj_t adc_array_in, mp_obj_t buf_array_i
     if (nadcs != nbufs) {
         mp_raise_ValueError(MP_ERROR_TEXT("length of ADC and buffer lists differ"));
     }
+    if (nadcs > ADC_READ_TIMED_MULTI_MAX) {
+        mp_raise_ValueError(MP_ERROR_TEXT("too many ADCs"));
+    }
 
     // Get buf for first ADC, get word size, check other buffers match in type
     mp_buffer_info_t bufinfo;
     mp_get_buffer_raise(buf_array[0], &bufinfo, MP_BUFFER_WRITE);
     size_t typesize = mp_binary_get_size('@', bufinfo.typecode, NULL);
-    void *bufptrs[nbufs];
+    void *bufptrs[ADC_READ_TIMED_MULTI_MAX];
     for (uint array_index = 0; array_index < nbufs; array_index++) {
+        if (!mp_obj_is_type(adc_array[array_index], &pyb_adc_type)) {
+            mp_raise_TypeError(MP_ERROR_TEXT("expecting ADC objects"));
+        }
         mp_buffer_info_t bufinfo_curr;
         mp_get_buffer_raise(buf_array[array_index], &bufinfo_curr, MP_BUFFER_WRITE);
         if ((bufinfo.len != bufinfo_curr.len) || (bufinfo.typecode != bufinfo_curr.typecode)) {
