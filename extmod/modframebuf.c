@@ -319,7 +319,9 @@ static mp_obj_t framebuf_make_new_helper(size_t n_args, const mp_obj_t *args_in,
     mp_buffer_info_t bufinfo;
     mp_get_buffer_raise(args_in[0], &bufinfo, buf_flags);
 
-    if ((strides_required * stride + (height_required - strides_required) * width_required) * bpp / 8 > bufinfo.len) {
+    // Compute the required size in 64 bits: with width, height and stride up to
+    // 0xffff the product overflows a 32-bit size_t.
+    if (((uint64_t)strides_required * stride + (uint64_t)(height_required - strides_required) * width_required) * bpp / 8 > bufinfo.len) {
         mp_raise_ValueError(NULL);
     }
 
