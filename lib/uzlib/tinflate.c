@@ -395,7 +395,7 @@ static int tinf_inflate_block_data(uzlib_uncomp_t *d, TINF_TREE *lt, TINF_TREE *
         int sym = tinf_decode_symbol(d, lt);
         //printf("huff sym: %02x\n", sym);
 
-        if (d->eof) {
+        if (d->eof || sym < 0) {
             return UZLIB_DATA_ERROR;
         }
 
@@ -420,7 +420,9 @@ static int tinf_inflate_block_data(uzlib_uncomp_t *d, TINF_TREE *lt, TINF_TREE *
         d->curlen = tinf_read_bits(d, lookup_table[sym].length_bits, lookup_table[sym].length_base);
 
         dist = tinf_decode_symbol(d, dt);
-        if (dist >= 30) {
+        if (dist < 0 || dist >= 30) {
+            /* don't leave a length behind for a copy that has no offset */
+            d->curlen = 0;
             return UZLIB_DATA_ERROR;
         }
 
