@@ -67,6 +67,7 @@ static int instance_count_native_bases(const mp_obj_type_t *type, const mp_obj_t
         #if MICROPY_MULTIPLE_INHERITANCE
         } else if (((mp_obj_base_t *)MP_OBJ_TYPE_GET_SLOT(type, parent))->type == &mp_type_tuple) {
             // Multiple parents, search through them all recursively.
+            mp_cstack_check();
             const mp_obj_tuple_t *parent_tuple = MP_OBJ_TYPE_GET_SLOT(type, parent);
             const mp_obj_t *item = parent_tuple->items;
             const mp_obj_t *top = item + parent_tuple->len;
@@ -213,6 +214,8 @@ static void mp_obj_class_lookup(struct class_lookup_data *lookup, const mp_obj_t
             return;
         #if MICROPY_MULTIPLE_INHERITANCE
         } else if (((mp_obj_base_t *)MP_OBJ_TYPE_GET_SLOT(type, parent))->type == &mp_type_tuple) {
+            // Multiple parents, all but the last are searched recursively.
+            mp_cstack_check();
             const mp_obj_tuple_t *parent_tuple = MP_OBJ_TYPE_GET_SLOT(type, parent);
             const mp_obj_t *item = parent_tuple->items;
             const mp_obj_t *top = item + parent_tuple->len - 1;
@@ -1453,7 +1456,9 @@ bool mp_obj_is_subclass_fast(mp_const_obj_t object, mp_const_obj_t classinfo) {
             return false;
         #if MICROPY_MULTIPLE_INHERITANCE
         } else if (((mp_obj_base_t *)MP_OBJ_TYPE_GET_SLOT(self, parent))->type == &mp_type_tuple) {
-            // get the base objects (they should be type objects)
+            // get the base objects (they should be type objects); all but the
+            // last are searched recursively, so check the stack
+            mp_cstack_check();
             const mp_obj_tuple_t *parent_tuple = MP_OBJ_TYPE_GET_SLOT(self, parent);
             const mp_obj_t *item = parent_tuple->items;
             const mp_obj_t *top = item + parent_tuple->len - 1;
