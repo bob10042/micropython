@@ -233,6 +233,9 @@ static mp_obj_t pyb_can_init_helper(pyb_can_obj_t *self, size_t n_args, const mp
     self->can.Init.DataTimeSeg2 = args[ARG_brs_bs2].u_int;
     #else
     // set the can2_start_bank value
+    if (args[ARG_num_filter_banks].u_int < 0 || args[ARG_num_filter_banks].u_int > CAN_MAX_FILTER_CAN1_2) {
+        mp_raise_ValueError(MP_ERROR_TEXT("num_filter_banks out of range"));
+    }
     can2_start_bank = args[ARG_num_filter_banks].u_int;
     #endif
 
@@ -601,12 +604,30 @@ static mp_obj_t pyb_can_clearfilter(size_t n_args, const mp_obj_t *pos_args, mp_
     #if MICROPY_HW_ENABLE_FDCAN
     can_clearfilter(&self->can, f, args[ARG_extframe].u_bool);
     #else
-    if (self->can_id == 2) {
+    // check the filter bank is in range, the same as setfilter does
+    if (f < 0) {
+        goto error;
+    } else if (self->can_id == 1) {
+        if (f >= can2_start_bank) {
+            goto error;
+        }
+    } else if (self->can_id == 2) {
         f += can2_start_bank;
+        if (f >= CAN_MAX_FILTER_CAN1_2) {
+            goto error;
+        }
+    } else {
+        if (f > 13) { // CAN3 is independent and has its own 14 filters.
+            goto error;
+        }
     }
     can_clearfilter(&self->can, f, can2_start_bank);
     #endif
     return mp_const_none;
+    #if !MICROPY_HW_ENABLE_FDCAN
+error:
+    mp_raise_ValueError(MP_ERROR_TEXT("CAN filter parameter error"));
+    #endif
 }
 static MP_DEFINE_CONST_FUN_OBJ_KW(pyb_can_clearfilter_obj, 2, pyb_can_clearfilter);
 
