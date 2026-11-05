@@ -106,11 +106,16 @@ void FLASH_IRQHandler(void) {
 }
 #endif
 
-void storage_flush(void) {
-    MICROPY_HW_BDEV_IOCTL(BDEV_IOCTL_SYNC, 0);
+// Returns 0 on success, or a negative error if the cached data could not be written out.
+int storage_flush(void) {
+    int ret = MICROPY_HW_BDEV_IOCTL(BDEV_IOCTL_SYNC, 0);
     #if defined(MICROPY_HW_BDEV2_IOCTL)
-    MICROPY_HW_BDEV2_IOCTL(BDEV_IOCTL_SYNC, 0);
+    int ret2 = MICROPY_HW_BDEV2_IOCTL(BDEV_IOCTL_SYNC, 0);
+    if (ret == 0) {
+        ret = ret2;
+    }
     #endif
+    return ret;
 }
 
 static void build_partition(uint8_t *buf, int boot, int type, uint32_t start_block, uint32_t num_blocks) {
@@ -422,11 +427,9 @@ static mp_obj_t pyb_flash_ioctl(mp_obj_t self_in, mp_obj_t cmd_in, mp_obj_t arg_
             return MP_OBJ_NEW_SMALL_INT(ret);
         }
         case MP_BLOCKDEV_IOCTL_DEINIT:
-            storage_flush();
-            return MP_OBJ_NEW_SMALL_INT(0);                                             // TODO properly
+            return MP_OBJ_NEW_SMALL_INT(storage_flush());                               // TODO properly
         case MP_BLOCKDEV_IOCTL_SYNC:
-            storage_flush();
-            return MP_OBJ_NEW_SMALL_INT(0);
+            return MP_OBJ_NEW_SMALL_INT(storage_flush());
 
         case MP_BLOCKDEV_IOCTL_BLOCK_COUNT: {
             mp_int_t n;

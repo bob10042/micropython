@@ -132,8 +132,7 @@ static int lu_ioctl(uint8_t lun, int op, uint32_t *data) {
                 *data = 0;
                 return 0;
             case MP_BLOCKDEV_IOCTL_SYNC:
-                storage_flush();
-                return 0;
+                return storage_flush();
             case MP_BLOCKDEV_IOCTL_BLOCK_SIZE:
                 *data = storage_get_block_size();
                 return 0;

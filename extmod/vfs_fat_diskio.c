@@ -124,6 +124,10 @@ DRESULT disk_ioctl(
     // Second part: convert the result for return
     switch (cmd) {
         case CTRL_SYNC:
+            if (mp_obj_is_small_int(ret) && MP_OBJ_SMALL_INT_VALUE(ret) != 0) {
+                // the block device could not write out its cached data
+                return RES_ERROR;
+            }
             return RES_OK;
 
         case GET_SECTOR_COUNT: {

@@ -72,7 +72,7 @@ static uint32_t flash_cache_sector_start;
 static uint32_t flash_cache_sector_size;
 static uint32_t flash_tick_counter_last_write;
 
-static void flash_bdev_irq_handler(void);
+static int flash_bdev_irq_handler(void);
 
 int32_t flash_bdev_ioctl(uint32_t op, uint32_t arg) {
     (void)arg;
@@ -92,15 +92,20 @@ int32_t flash_bdev_ioctl(uint32_t op, uint32_t arg) {
             return 0;
 
         case BDEV_IOCTL_SYNC: {
+            int ret = 0;
             uint32_t basepri = raise_irq_pri(IRQ_PRI_FLASH); // prevent cache flushing and USB access
             if (flash_flags & FLASH_FLAG_DIRTY) {
                 flash_flags |= FLASH_FLAG_FORCE_WRITE;
                 while (flash_flags & FLASH_FLAG_DIRTY) {
-                    flash_bdev_irq_handler();
+                    ret = flash_bdev_irq_handler();
+                    if (ret != 0) {
+                        // the cache is still dirty and will be retried later
+                        break;
+                    }
                 }
             }
             restore_irq_pri(basepri);
-            return 0;
+            return ret;
         }
     }
     return -MP_EINVAL;
@@ -114,7 +119,10 @@ static uint8_t *flash_cache_get_addr_for_write(uint32_t flash_addr) {
         flash_sector_size = FLASH_SECTOR_SIZE_MAX;
     }
     if (flash_cache_sector_start != flash_sector_start) {
-        flash_bdev_ioctl(BDEV_IOCTL_SYNC, 0);
+        if (flash_bdev_ioctl(BDEV_IOCTL_SYNC, 0) != 0) {
+            // the cached sector could not be written back, so it can't be replaced
+            return NULL;
+        }
         memcpy((void *)CACHE_MEM_START_ADDR, (const void *)flash_sector_start, flash_sector_size);
         flash_cache_sector_start = flash_sector_start;
         flash_cache_sector_size = flash_sector_size;
@@ -152,28 +160,46 @@ static uint32_t convert_block_to_flash_addr(uint32_t block) {
     return -1;
 }
 
-static void flash_bdev_irq_handler(void) {
+// Called when erasing or writing the cached sector failed.  The cache stays
+// dirty (and the red LED on) so the data is not lost, and the write-back is
+// retried by the idle handler no sooner than 5 seconds from now.
+static int flash_bdev_write_failed(int ret) {
+    flash_flags &= ~FLASH_FLAG_FORCE_WRITE;
+    flash_tick_counter_last_write = HAL_GetTick();
+    return ret;
+}
+
+static int flash_bdev_irq_handler(void) {
     if (!(flash_flags & FLASH_FLAG_DIRTY)) {
-        return;
+        return 0;
     }
 
     // This code erases the flash directly, waiting for it to finish
     if (!(flash_flags & FLASH_FLAG_ERASED)) {
-        flash_erase(flash_cache_sector_start);
+        int ret = flash_erase(flash_cache_sector_start);
+        if (ret != 0) {
+            return flash_bdev_write_failed(ret);
+        }
         flash_flags |= FLASH_FLAG_ERASED;
-        return;
+        return 0;
     }
 
     // If not a forced write, wait at least 5 seconds after last write to flush
     // On file close and flash unmount we get a forced write, so we can afford to wait a while
     if ((flash_flags & FLASH_FLAG_FORCE_WRITE) || HAL_GetTick() - flash_tick_counter_last_write >= 5000) {
         // sync the cache RAM buffer by writing it to the flash page
-        flash_write(flash_cache_sector_start, (const uint32_t *)CACHE_MEM_START_ADDR, flash_cache_sector_size / 4);
+        int ret = flash_write(flash_cache_sector_start, (const uint32_t *)CACHE_MEM_START_ADDR, flash_cache_sector_size / 4);
+        if (ret != 0) {
+            // the sector may be partly programmed, so erase it again before retrying
+            flash_flags &= ~FLASH_FLAG_ERASED;
+            return flash_bdev_write_failed(ret);
+        }
         // clear the flash flags now that we have a clean cache
         flash_flags = 0;
         // indicate a clean cache with LED off
         led_state(PYB_LED_RED, 0);
     }
+    return 0;
 }
 
 bool flash_bdev_readblock(uint8_t *dest, uint32_t block) {
@@ -197,6 +223,10 @@ bool flash_bdev_writeblock(const uint8_t *src, uint32_t block) {
     }
     uint32_t basepri = raise_irq_pri(IRQ_PRI_FLASH); // prevent cache flushing and USB access
     uint8_t *dest = flash_cache_get_addr_for_write(flash_addr);
+    if (dest == NULL) {
+        restore_irq_pri(basepri);
+        return false;
+    }
     memcpy(dest, src, FLASH_BLOCK_SIZE);
     restore_irq_pri(basepri);
     return true;
@@ -232,6 +262,10 @@ int flash_bdev_writeblocks_ext(const uint8_t *src, uint32_t block, uint32_t offs
         }
         uint32_t basepri = raise_irq_pri(IRQ_PRI_FLASH); // prevent cache flushing and USB access
         uint8_t *dest = flash_cache_get_addr_for_write(flash_addr + offset);
+        if (dest == NULL) {
+            restore_irq_pri(basepri);
+            return -1;
+        }
         memcpy(dest, src, l);
         restore_irq_pri(basepri);
         src += l;
