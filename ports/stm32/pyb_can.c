@@ -205,6 +205,14 @@ static mp_obj_t pyb_can_init_helper(pyb_can_obj_t *self, size_t n_args, const mp
     mp_arg_val_t args[MP_ARRAY_SIZE(allowed_args)];
     mp_arg_parse_all(n_args, pos_args, kw_args, MP_ARRAY_SIZE(allowed_args), allowed_args, args);
 
+    #if !MICROPY_HW_ENABLE_FDCAN
+    // Check this before the handle is cleared below, so that an error leaves an
+    // enabled CAN object usable.
+    if (args[ARG_num_filter_banks].u_int < 0 || args[ARG_num_filter_banks].u_int > CAN_MAX_FILTER_CAN1_2) {
+        mp_raise_ValueError(MP_ERROR_TEXT("num_filter_banks out of range"));
+    }
+    #endif
+
     // set the CAN configuration values
     memset(&self->can, 0, sizeof(self->can));
 
@@ -232,10 +240,7 @@ static mp_obj_t pyb_can_init_helper(pyb_can_obj_t *self, size_t n_args, const mp
     self->can.Init.DataTimeSeg1 = args[ARG_brs_bs1].u_int; // DataTimeSeg1 = Propagation_segment + Phase_segment_1
     self->can.Init.DataTimeSeg2 = args[ARG_brs_bs2].u_int;
     #else
-    // set the can2_start_bank value
-    if (args[ARG_num_filter_banks].u_int < 0 || args[ARG_num_filter_banks].u_int > CAN_MAX_FILTER_CAN1_2) {
-        mp_raise_ValueError(MP_ERROR_TEXT("num_filter_banks out of range"));
-    }
+    // set the can2_start_bank value (range checked above)
     can2_start_bank = args[ARG_num_filter_banks].u_int;
     #endif
 
