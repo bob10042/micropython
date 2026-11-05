@@ -980,6 +980,13 @@ static uint8_t USBD_CDC_MSC_HID_Setup(USBD_HandleTypeDef *pdev, USBD_SetupReqTyp
                         break;
 
                     case USB_REQ_CLEAR_FEATURE:
+                        // Only an endpoint can be the target (wIndex is then the
+                        // MSC endpoint address); stall anything else
+                        if ((req->bmRequest & USB_REQ_RECIPIENT_MASK) != USB_REQ_RECIPIENT_ENDPOINT) {
+                            USBD_CtlError(pdev, req);
+                            return USBD_FAIL;
+                        }
+
                         // Flush the FIFO and Clear the stall status
                         USBD_LL_FlushEP(pdev, (uint8_t)req->wIndex);
 
