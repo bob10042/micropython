@@ -398,6 +398,8 @@ static void compile_generic_tuple(compiler_t *comp, mp_parse_node_struct_t *pns)
 }
 
 static void c_if_cond(compiler_t *comp, mp_parse_node_t pn, bool jump_if, int label) {
+    // Recurses for nested not/and/or and parentheses, so check the stack.
+    mp_cstack_check();
     if (mp_parse_node_is_const_false(pn)) {
         if (jump_if == false) {
             EMIT_ARG(jump, label);
@@ -524,6 +526,8 @@ static void c_assign_tuple(compiler_t *comp, uint num_tail, mp_parse_node_t *nod
 
 // assigns top of stack to pn
 static void c_assign(compiler_t *comp, mp_parse_node_t pn, assign_kind_t assign_kind) {
+    // Recurses (via c_assign_tuple) for nested targets, so check the stack.
+    mp_cstack_check();
     assert(!MP_PARSE_NODE_IS_NULL(pn));
     if (MP_PARSE_NODE_IS_LEAF(pn)) {
         if (MP_PARSE_NODE_IS_ID(pn)) {
@@ -965,6 +969,8 @@ static void compile_funcdef(compiler_t *comp, mp_parse_node_struct_t *pns) {
 }
 
 static void c_del_stmt(compiler_t *comp, mp_parse_node_t pn) {
+    // Recurses for nested targets, so check the stack.
+    mp_cstack_check();
     if (MP_PARSE_NODE_IS_ID(pn)) {
         compile_delete_id(comp, MP_PARSE_NODE_LEAF_ARG(pn));
     } else if (MP_PARSE_NODE_IS_STRUCT_KIND(pn, PN_atom_expr_normal)) {
@@ -1747,6 +1753,8 @@ static void compile_try_stmt(compiler_t *comp, mp_parse_node_struct_t *pns) {
 }
 
 static void compile_with_stmt_helper(compiler_t *comp, size_t n, mp_parse_node_t *nodes, mp_parse_node_t body) {
+    // Recurses once per with item, so check the stack.
+    mp_cstack_check();
     if (n == 0) {
         // no more pre-bits, compile the body of the with
         compile_node(comp, body);
@@ -1865,6 +1873,8 @@ static void compile_async_for_stmt(compiler_t *comp, mp_parse_node_struct_t *pns
 }
 
 static void compile_async_with_stmt_helper(compiler_t *comp, size_t n, mp_parse_node_t *nodes, mp_parse_node_t body) {
+    // Recurses once per with item, so check the stack.
+    mp_cstack_check();
     if (n == 0) {
         // no more pre-bits, compile the body of the with
         compile_node(comp, body);
@@ -2975,6 +2985,8 @@ static void compile_scope_lambda_param(compiler_t *comp, mp_parse_node_t pn) {
 }
 
 static void compile_scope_comp_iter(compiler_t *comp, mp_parse_node_struct_t *pns_comp_for, mp_parse_node_t pn_inner_expr, int for_depth) {
+    // Recurses once per nested for clause, so check the stack.
+    mp_cstack_check();
     uint l_top = comp_next_label(comp);
     uint l_end = comp_next_label(comp);
     EMIT_ARG(label_assign, l_top);
