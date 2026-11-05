@@ -147,6 +147,34 @@ static mp_obj_t pyb_main(size_t n_args, const mp_obj_t *pos_args, mp_map_t *kw_a
 MP_DEFINE_CONST_FUN_OBJ_KW(pyb_main_obj, 1, pyb_main);
 
 #if MICROPY_HW_FLASH_MOUNT_AT_BOOT
+#if !MICROPY_HW_FLASH_FS_FORMAT_IF_UNREADABLE
+// Check whether every block of the flash storage reads as erased (all 0xff),
+// ie it has never been written.  Not only block 0: a reset during write-back of
+// the first sector can leave it erased while later sectors still hold files.
+static bool flash_fs_is_erased(void) {
+    uint32_t *buf = m_new_maybe(uint32_t, FLASH_BLOCK_SIZE / 4);
+    if (buf == NULL) {
+        return false;
+    }
+    bool erased = true;
+    uint32_t num_blocks = storage_get_block_count();
+    for (uint32_t block = FLASH_PART1_START_BLOCK; erased && block < num_blocks; ++block) {
+        if (storage_read_blocks((uint8_t *)buf, block, 1) != 0) {
+            erased = false;
+            break;
+        }
+        for (size_t i = 0; i < FLASH_BLOCK_SIZE / 4; ++i) {
+            if (buf[i] != 0xffffffff) {
+                erased = false;
+                break;
+            }
+        }
+    }
+    m_del(uint32_t, buf, FLASH_BLOCK_SIZE / 4);
+    return erased;
+}
+#endif
+
 // avoid inlining to avoid stack usage within main()
 MP_NOINLINE static bool init_flash_fs(uint reset_mode) {
     if (reset_mode == BOARDCTRL_RESET_MODE_FACTORY_FILESYSTEM) {
@@ -214,6 +242,14 @@ MP_NOINLINE static bool init_flash_fs(uint reset_mode) {
         && reset_mode != BOARDCTRL_RESET_MODE_FACTORY_FILESYSTEM) {
         // No filesystem, bdev is still the default (so didn't detect a possibly corrupt littlefs),
         // and didn't already create a filesystem, so try to create a fresh one now.
+        #if !MICROPY_HW_FLASH_FS_FORMAT_IF_UNREADABLE
+        // But only if the storage is blank: anything else may be a damaged filesystem
+        // holding user files, so leave it unmounted and untouched for recovery.
+        if (!flash_fs_is_erased()) {
+            mp_printf(&mp_plat_print, "MPY: can't read flash filesystem, not formatting it\n");
+            return false;
+        }
+        #endif
         ret = factory_reset_create_filesystem();
         if (ret == 0) {
             ret = mp_vfs_mount_and_chdir_protected(bdev, mount_point);

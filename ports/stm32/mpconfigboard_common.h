@@ -203,6 +203,14 @@
 #define MICROPY_HW_FLASH_MOUNT_AT_BOOT (MICROPY_HW_ENABLE_STORAGE)
 #endif
 
+// Whether to create a fresh flash filesystem at boot when the existing one can't
+// be read but the storage is not blank.  If disabled (the default) a fresh
+// filesystem is only created on blank (fully erased) storage, so a damaged
+// filesystem is left as it is for recovery.  Enable for the old behaviour.
+#ifndef MICROPY_HW_FLASH_FS_FORMAT_IF_UNREADABLE
+#define MICROPY_HW_FLASH_FS_FORMAT_IF_UNREADABLE (0)
+#endif
+
 // The volume label used when creating the flash filesystem
 #ifndef MICROPY_HW_FLASH_FS_LABEL
 #define MICROPY_HW_FLASH_FS_LABEL "pybflash"
