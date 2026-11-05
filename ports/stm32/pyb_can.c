@@ -701,6 +701,11 @@ static mp_obj_t pyb_can_setfilter(size_t n_args, const mp_obj_t *pos_args, mp_ma
     mp_obj_get_array(args[ARG_params].u_obj, &len, &params);
     if (args[ARG_rtr].u_obj != MP_OBJ_NULL) {
         mp_obj_get_array(args[ARG_rtr].u_obj, &rtr_len, &rtr_flags);
+        // rtr needs one entry per filter id: 4 for LIST16, 1 for MASK32, else 2
+        size_t rtr_len_needed = args[ARG_mode].u_int == LIST16 ? 4 : args[ARG_mode].u_int == MASK32 ? 1 : 2;
+        if (rtr_len < rtr_len_needed) {
+            goto error;
+        }
     }
 
     CAN_FilterConfTypeDef filter;
