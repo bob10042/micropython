@@ -1262,8 +1262,9 @@ static mp_obj_t pyb_timer_channel(size_t n_args, const mp_obj_t *pos_args, mp_ma
         // Unlink the channel from the list.
         if (prev_chan) {
             prev_chan->next = chan->next;
+        } else {
+            self->channel = chan->next;
         }
-        self->channel = chan->next;
         chan->next = NULL;
     }
 
