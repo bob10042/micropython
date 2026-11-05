@@ -307,7 +307,7 @@ void adc_config(ADC_TypeDef *adc, uint32_t bits) {
 
     // Find resolution, defaulting to last element in table
     uint32_t res;
-    for (res = 0; res <= MP_ARRAY_SIZE(adc_cr_to_bits_table); ++res) {
+    for (res = 0; res < MP_ARRAY_SIZE(adc_cr_to_bits_table) - 1; ++res) {
         if (adc_cr_to_bits_table[res] == bits) {
             break;
         }
