@@ -651,6 +651,16 @@ static mp_obj_t adc_read(mp_obj_t self_in) {
 }
 static MP_DEFINE_CONST_FUN_OBJ_1(adc_read_obj, adc_read);
 
+// Wait for the timer's update flag.  The timer may not be running (never
+// started, or deinit'ed) in which case the flag never sets, so check for that.
+static void adc_wait_timer_update(TIM_HandleTypeDef *tim) {
+    while (__HAL_TIM_GET_FLAG(tim, TIM_FLAG_UPDATE) == RESET) {
+        if (!(tim->Instance->CR1 & TIM_CR1_CEN)) {
+            mp_raise_ValueError(MP_ERROR_TEXT("timer not running"));
+        }
+    }
+}
+
 /// \method read_timed(buf, timer)
 ///
 /// Read analog values into `buf` at a rate set by the `timer` object.
@@ -714,8 +724,7 @@ static mp_obj_t adc_read_timed(mp_obj_t self_in, mp_obj_t buf_in, mp_obj_t freq_
     uint nelems = bufinfo.len / typesize;
     for (uint index = 0; index < nelems; index++) {
         // Wait for the timer to trigger so we sample at the correct frequency
-        while (__HAL_TIM_GET_FLAG(tim, TIM_FLAG_UPDATE) == RESET) {
-        }
+        adc_wait_timer_update(tim);
         __HAL_TIM_CLEAR_FLAG(tim, TIM_FLAG_UPDATE);
 
         if (index == 0) {
@@ -810,8 +819,7 @@ static mp_obj_t adc_read_timed_multi(mp_obj_t adc_array_in, mp_obj_t buf_array_i
 
     // Ensure first sample is on a timer tick
     __HAL_TIM_CLEAR_FLAG(tim, TIM_FLAG_UPDATE);
-    while (__HAL_TIM_GET_FLAG(tim, TIM_FLAG_UPDATE) == RESET) {
-    }
+    adc_wait_timer_update(tim);
     __HAL_TIM_CLEAR_FLAG(tim, TIM_FLAG_UPDATE);
 
     // Overrun check: assume success
@@ -823,8 +831,7 @@ static mp_obj_t adc_read_timed_multi(mp_obj_t adc_array_in, mp_obj_t buf_array_i
             success = false;
         } else {
             // Wait for the timer to trigger so we sample at the correct frequency
-            while (__HAL_TIM_GET_FLAG(tim, TIM_FLAG_UPDATE) == RESET) {
-            }
+            adc_wait_timer_update(tim);
         }
         __HAL_TIM_CLEAR_FLAG(tim, TIM_FLAG_UPDATE);
 
