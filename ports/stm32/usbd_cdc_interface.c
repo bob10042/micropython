@@ -319,8 +319,9 @@ int8_t usbd_cdc_receive(usbd_cdc_state_t *cdc_in, size_t len) {
         } else {
             uint16_t next_put = (cdc->rx_buf_put + 1) & (MICROPY_HW_USB_CDC_RX_DATA_SIZE - 1);
             if (next_put == cdc->rx_buf_get) {
-                // overflow, we just discard the rest of the chars
-                break;
+                // overflow, discard this char but keep scanning the rest of
+                // the packet so that an interrupt char is still seen
+                continue;
             }
             cdc->rx_user_buf[cdc->rx_buf_put] = *src;
             cdc->rx_buf_put = next_put;
