@@ -567,8 +567,16 @@ static mp_obj_t pyb_can_recv(size_t n_args, const mp_obj_t *pos_args, mp_map_t *
               || (mv->typecode | 0x20) == (MP_OBJ_ARRAY_TYPECODE_FLAG_RW | 'b'))) {
             mp_raise_ValueError(NULL);
         }
+        // The memoryview may be a slice, whose data starts at an offset (the
+        // 'free' field, in elements of 1 byte here) into its items.
+        size_t offset = mv->free;
+        // If the data is on the GC heap then the frame must fit in that block.
+        size_t nbytes = gc_nbytes(mv->items);
+        if (nbytes != 0 && offset + rx_dlc > nbytes) {
+            mp_raise_ValueError(NULL);
+        }
         mv->len = rx_dlc;
-        memcpy(mv->items, rx_data, rx_dlc);
+        memcpy((uint8_t *)mv->items + offset, rx_data, rx_dlc);
     }
 
     // Populate the first 4 values of the tuple/list
