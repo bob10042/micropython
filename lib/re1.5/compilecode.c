@@ -78,7 +78,7 @@ static const char *_compilecode(const char *re, ByteProg *prog, int sizecode)
                     }
                 }
                 if (!c) return NULL;
-                if (re[1] == '-' && re[2] != ']') {
+                if (re[1] == '-' && re[2] != ']' && re[2] != '\0') {
                     re += 2;
                 }
             emit_char_pair:
