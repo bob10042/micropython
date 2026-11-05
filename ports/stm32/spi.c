@@ -356,7 +356,12 @@ void spi_set_params(const spi_t *spi_obj, uint32_t prescale, int32_t baudrate,
     }
 
     if (bits != -1) {
-        init->DataSize = (bits == 16) ? SPI_DATASIZE_16BIT : SPI_DATASIZE_8BIT;
+        // spi_transfer() passes a byte count to the HAL, which counts frames,
+        // so only 8-bit frames are supported.
+        if (bits != 8) {
+            mp_raise_ValueError(MP_ERROR_TEXT("bits must be 8"));
+        }
+        init->DataSize = SPI_DATASIZE_8BIT;
     }
 
     if (firstbit != -1) {
