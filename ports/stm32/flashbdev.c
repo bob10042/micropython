@@ -114,7 +114,10 @@ int32_t flash_bdev_ioctl(uint32_t op, uint32_t arg) {
 static uint8_t *flash_cache_get_addr_for_write(uint32_t flash_addr) {
     uint32_t flash_sector_start;
     uint32_t flash_sector_size;
-    flash_get_sector_info(flash_addr, &flash_sector_start, &flash_sector_size);
+    if (flash_get_sector_info(flash_addr, &flash_sector_start, &flash_sector_size) < 0) {
+        // address is not in any flash sector
+        return NULL;
+    }
     if (flash_sector_size > FLASH_SECTOR_SIZE_MAX) {
         flash_sector_size = FLASH_SECTOR_SIZE_MAX;
     }
@@ -136,7 +139,10 @@ static uint8_t *flash_cache_get_addr_for_write(uint32_t flash_addr) {
 static uint8_t *flash_cache_get_addr_for_read(uint32_t flash_addr) {
     uint32_t flash_sector_start;
     uint32_t flash_sector_size;
-    flash_get_sector_info(flash_addr, &flash_sector_start, &flash_sector_size);
+    if (flash_get_sector_info(flash_addr, &flash_sector_start, &flash_sector_size) < 0) {
+        // address is not in any flash sector
+        return NULL;
+    }
     if (flash_cache_sector_start == flash_sector_start) {
         // in cache, copy from there
         return (uint8_t *)CACHE_MEM_START_ADDR + flash_addr - flash_sector_start;
@@ -210,6 +216,9 @@ bool flash_bdev_readblock(uint8_t *dest, uint32_t block) {
         return false;
     }
     uint8_t *src = flash_cache_get_addr_for_read(flash_addr);
+    if (src == NULL) {
+        return false;
+    }
     memcpy(dest, src, FLASH_BLOCK_SIZE);
     return true;
 }
@@ -233,6 +242,10 @@ bool flash_bdev_writeblock(const uint8_t *src, uint32_t block) {
 }
 
 int flash_bdev_readblocks_ext(uint8_t *dest, uint32_t block, uint32_t offset, uint32_t len) {
+    if (offset >= FLASH_BLOCK_SIZE) {
+        // offset must be within the first block
+        return -1;
+    }
     // Get data from flash memory, possibly via cache
     while (len) {
         uint32_t l = MIN(len, FLASH_BLOCK_SIZE - offset);
@@ -242,6 +255,9 @@ int flash_bdev_readblocks_ext(uint8_t *dest, uint32_t block, uint32_t offset, ui
             return -1;
         }
         uint8_t *src = flash_cache_get_addr_for_read(flash_addr + offset);
+        if (src == NULL) {
+            return -1;
+        }
         memcpy(dest, src, l);
         dest += l;
         block += 1;
@@ -252,6 +268,10 @@ int flash_bdev_readblocks_ext(uint8_t *dest, uint32_t block, uint32_t offset, ui
 }
 
 int flash_bdev_writeblocks_ext(const uint8_t *src, uint32_t block, uint32_t offset, uint32_t len) {
+    if (offset >= FLASH_BLOCK_SIZE) {
+        // offset must be within the first block
+        return -1;
+    }
     // Copy to cache
     while (len) {
         uint32_t l = MIN(len, FLASH_BLOCK_SIZE - offset);

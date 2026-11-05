@@ -369,7 +369,7 @@ static mp_obj_t pyb_flash_readblocks(size_t n_args, const mp_obj_t *args) {
     else if (self != &pyb_flash_obj) {
         // Extended block read on a sub-section of the flash storage
         uint32_t offset = mp_obj_get_int(args[3]);
-        if ((block_num * MICROPY_HW_BDEV_BLOCKSIZE_EXT) >= self->len) {
+        if ((uint64_t)block_num * MICROPY_HW_BDEV_BLOCKSIZE_EXT + offset + bufinfo.len > self->len) {
             ret = -MP_EFAULT; // Bad address
         } else {
             block_num += self->start / MICROPY_HW_BDEV_BLOCKSIZE_EXT;
@@ -396,7 +396,7 @@ static mp_obj_t pyb_flash_writeblocks(size_t n_args, const mp_obj_t *args) {
     else if (self != &pyb_flash_obj) {
         // Extended block write on a sub-section of the flash storage
         uint32_t offset = mp_obj_get_int(args[3]);
-        if ((block_num * MICROPY_HW_BDEV_BLOCKSIZE_EXT) >= self->len) {
+        if ((uint64_t)block_num * MICROPY_HW_BDEV_BLOCKSIZE_EXT + offset + bufinfo.len > self->len) {
             ret = -MP_EFAULT; // Bad address
         } else {
             block_num += self->start / MICROPY_HW_BDEV_BLOCKSIZE_EXT;

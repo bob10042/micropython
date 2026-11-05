@@ -194,12 +194,50 @@ static void test_aud022(void) {
 }
 
 /******************************************************************************/
+// AUD-017: the offset of the extended block protocol must stay inside the
+// block device; it must never reach the firmware in sector 5 (0x08020000).
+
+#define SECTOR5 ((uint8_t *)(uintptr_t)0x08020000)
+
+static void test_aud017(void) {
+    static uint8_t buf[32];
+
+    // Offset that points at the firmware: refused, nothing cached or erased.
+    fake_reset();
+    memset(buf, 0x55, sizeof(buf));
+    CHECK(flash_bdev_writeblocks_ext(buf, 0, 0x1C000, 16) < 0);
+    CHECK(flash_bdev_ioctl(BDEV_IOCTL_SYNC, 0) == 0);
+    CHECK(fake_erase_calls == 0);
+    CHECK(mem_is(SECTOR5, 0x11, 0x20000));
+    CHECK(flash_bdev_readblocks_ext(buf, 0, 0x1C000, 16) < 0);
+
+    // Offset of exactly one block is refused too (it is not inside block 0).
+    CHECK(flash_bdev_writeblocks_ext(buf, 0, FLASH_BLOCK_SIZE, 16) < 0);
+    CHECK(flash_bdev_readblocks_ext(buf, 0, FLASH_BLOCK_SIZE, 16) < 0);
+    CHECK(flash_bdev_ioctl(BDEV_IOCTL_SYNC, 0) == 0);
+    CHECK(mem_is(BLK(0), 0x11, 2 * FLASH_BLOCK_SIZE));
+
+    // A write that starts inside a block and runs into the next still works.
+    fake_reset();
+    memset(buf, 0x44, 30);
+    CHECK(flash_bdev_writeblocks_ext(buf, 0, 500, 30) == 0);
+    CHECK(flash_bdev_ioctl(BDEV_IOCTL_SYNC, 0) == 0);
+    CHECK(mem_is(BLK(0), 0x11, 500));
+    CHECK(mem_is(BLK(0) + 500, 0x44, 30));
+    CHECK(mem_is(BLK(0) + 530, 0x11, FLASH_BLOCK_SIZE));
+    memset(buf, 0, sizeof(buf));
+    CHECK(flash_bdev_readblocks_ext(buf, 0, 500, 30) == 0);
+    CHECK(mem_is(buf, 0x44, 30));
+}
+
+/******************************************************************************/
 
 static const struct {
     const char *name;
     void (*fun)(void);
 } tests[] = {
     { "aud022", test_aud022 },
+    { "aud017", test_aud017 },
 };
 
 int main(int argc, char **argv) {
