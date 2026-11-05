@@ -372,8 +372,9 @@ static bool i2s_init(machine_i2s_obj_t *self) {
 }
 
 void HAL_I2S_ErrorCallback(I2S_HandleTypeDef *hi2s) {
-    uint32_t errorCode = HAL_I2S_GetError(hi2s);
-    mp_printf(MICROPY_ERROR_PRINTER, "I2S Error = %ld\n", errorCode);
+    // This runs in IRQ context so don't print here.  The HAL keeps the error in
+    // hi2s->ErrorCode and a blocking read/write raises OSError when it sees it.
+    (void)hi2s;
 }
 
 void HAL_I2S_RxCpltCallback(I2S_HandleTypeDef *hi2s) {
