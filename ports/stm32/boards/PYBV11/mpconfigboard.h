@@ -12,6 +12,12 @@
 #define MICROPY_HW_ENABLE_USB       (1)
 #define MICROPY_HW_ENABLE_SDCARD    (1)
 
+// Stack check margin: it must cover C code that runs after the last stack
+// check plus interrupt frames.  os.getcwd() via FatFs uses about 1.3 KB of
+// unchecked stack (f_getcwd has the long-file-name buffer on the stack), and
+// an interrupt adds 100-200 B, so the port default of 1 KB is not enough.
+#define MICROPY_STACK_CHECK_MARGIN  (2048)
+
 // HSE is 12MHz
 #define MICROPY_HW_CLK_PLLM (12)
 #define MICROPY_HW_CLK_PLLN (336)
