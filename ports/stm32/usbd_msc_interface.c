@@ -297,8 +297,9 @@ static int8_t usbd_msc_Read(uint8_t lun, uint8_t *buf, uint32_t blk_addr, uint16
     const void *lu = usbd_msc_lu_data[lun];
 
     if (lu == &pyb_flash_type) {
-        storage_read_blocks(buf, blk_addr, blk_len);
-        return 0;
+        if (storage_read_blocks(buf, blk_addr, blk_len) == 0) {
+            return 0;
+        }
     #if MICROPY_HW_ENABLE_SDCARD
     } else if (lu == &machine_sdcard_type
                #if MICROPY_HW_ENABLE_MMCARD
@@ -321,8 +322,9 @@ static int8_t usbd_msc_Write(uint8_t lun, uint8_t *buf, uint32_t blk_addr, uint1
     const void *lu = usbd_msc_lu_data[lun];
 
     if (lu == &pyb_flash_type) {
-        storage_write_blocks(buf, blk_addr, blk_len);
-        return 0;
+        if (storage_write_blocks(buf, blk_addr, blk_len) == 0) {
+            return 0;
+        }
     #if MICROPY_HW_ENABLE_SDCARD
     } else if (lu == &machine_sdcard_type
                #if MICROPY_HW_ENABLE_MMCARD
@@ -342,6 +344,12 @@ static int8_t usbd_msc_GetMaxLun(void) {
     return usbd_msc_lu_num - 1;
 }
 
+// Write any cached data of a logical unit out to its medium (SCSI SYNCHRONIZE CACHE)
+static int8_t usbd_msc_Sync(uint8_t lun) {
+    uint32_t dummy;
+    return lu_ioctl(lun, MP_BLOCKDEV_IOCTL_SYNC, &dummy) == 0 ? 0 : -1;
+}
+
 // Table of operations for the SCSI layer to call
 const USBD_StorageTypeDef usbd_msc_fops = {
     usbd_msc_Init,
@@ -354,6 +362,7 @@ const USBD_StorageTypeDef usbd_msc_fops = {
     usbd_msc_Read,
     usbd_msc_Write,
     usbd_msc_GetMaxLun,
+    usbd_msc_Sync,
 };
 
 #endif // MICROPY_HW_USB_MSC

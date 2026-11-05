@@ -357,9 +357,13 @@ static int8_t SCSI_ModeSense10 (USBD_HandleTypeDef  *pdev, uint8_t lun, uint8_t 
 }
 
 static int8_t SCSI_SynchronizeCache(USBD_HandleTypeDef  *pdev, uint8_t lun, uint8_t *params) {
-    // nothing to synchronize, so just return "success"
   USBD_MSC_BOT_HandleTypeDef *hmsc = &((usbd_cdc_msc_hid_state_t*)pdev->pClassData)->MSC_BOT_ClassData;
     hmsc->bot_data_length = 0;
+    // write any cached data out to the medium before reporting success
+    if (hmsc->bdev_ops->Sync(lun) != 0) {
+        SCSI_SenseCode(pdev, lun, HARDWARE_ERROR, WRITE_FAULT);
+        return -1;
+    }
     return 0;
 }
 
