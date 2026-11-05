@@ -351,7 +351,11 @@ static mp_obj_t re_sub_helper(size_t n_args, const mp_obj_t *args) {
         vstr_add_strn(&vstr_return, subj.begin, match->caps[0] - subj.begin);
 
         // Get replacement string
-        const char *repl = mp_obj_str_get_str((mp_obj_is_callable(replace) ? mp_call_function_1(replace, MP_OBJ_FROM_PTR(match)) : replace));
+        // The replacement object is held in a volatile local so it stays reachable
+        // by the GC while its bytes are copied: repl moves into the middle of the
+        // string data, and the GC only counts pointers to the start of a block.
+        volatile mp_obj_t repl_obj = mp_obj_is_callable(replace) ? mp_call_function_1(replace, MP_OBJ_FROM_PTR(match)) : replace;
+        const char *repl = mp_obj_str_get_str(repl_obj);
 
         // Append replacement string to result, substituting any regex groups
         while (*repl != '\0') {
