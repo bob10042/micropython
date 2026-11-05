@@ -201,31 +201,43 @@ static mp_obj_t fat_vfs_open(mp_obj_t self_in, mp_obj_t path_in, mp_obj_t mode_i
     const mp_obj_type_t *type = &mp_type_vfs_fat_textio;
     int mode = 0;
     const char *mode_s = mp_obj_str_get_str(mode_in);
-    // TODO make sure only one of r, w, x, a, and b, t are specified
+    // Count the letters that select the open mode and the file type: at most one of
+    // each is allowed.  Without this check "rw" would truncate the file ('w' wins).
+    unsigned int num_rwxa = 0;
+    unsigned int num_bt = 0;
     while (*mode_s) {
         switch (*mode_s++) {
             case 'r':
                 mode |= FA_READ;
+                ++num_rwxa;
                 break;
             case 'w':
                 mode |= FA_WRITE | FA_CREATE_ALWAYS;
+                ++num_rwxa;
                 break;
             case 'x':
                 mode |= FA_WRITE | FA_CREATE_NEW;
+                ++num_rwxa;
                 break;
             case 'a':
                 mode |= FA_WRITE | FA_OPEN_ALWAYS;
+                ++num_rwxa;
                 break;
             case '+':
                 mode |= FA_READ | FA_WRITE;
                 break;
             case 'b':
                 type = &mp_type_vfs_fat_fileio;
+                ++num_bt;
                 break;
             case 't':
                 type = &mp_type_vfs_fat_textio;
+                ++num_bt;
                 break;
         }
+    }
+    if (num_rwxa > 1 || num_bt > 1) {
+        mp_raise_ValueError(NULL);
     }
 
     pyb_file_obj_t *o = mp_obj_malloc_with_finaliser(pyb_file_obj_t, type);

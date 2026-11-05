@@ -1,0 +1,27 @@
+rw ValueError
+rw keep
+wr ValueError
+wr keep
+r+w ValueError
+r+w keep
+ra ValueError
+ra keep
+wx ValueError
+wx keep
+rr ValueError
+rr keep
+rbt ValueError
+rbt keep
+wbb ValueError
+wbb keep
+r TextIOWrapper
+rb FileIO
+rt TextIOWrapper
+r+ TextIOWrapper
+r+b FileIO
+br+ FileIO
+a TextIOWrapper
+a+ TextIOWrapper
+w+ TextIOWrapper
+
+x
