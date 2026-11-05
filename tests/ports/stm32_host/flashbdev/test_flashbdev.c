@@ -231,6 +231,46 @@ static void test_aud017(void) {
 }
 
 /******************************************************************************/
+// AUD-005: the cached sector must not be erased until it is written back, so
+// a reset while the data is only in the RAM cache leaves the old data intact.
+
+static void test_aud005(void) {
+    fake_reset();
+    CHECK(write_block(0, 0x22)); // at tick 1000
+    // idle ticks during the 5 s write-back delay: flash keeps the old data
+    for (uint32_t t = 1512; t < 1000 + 5000; t += 512) {
+        irq_at(t);
+        CHECK(mem_is(BLK(0), 0x11, FLASH_BLOCK_SIZE));
+        CHECK(mem_is(BLK(31), 0x11, FLASH_BLOCK_SIZE)); // rest of sector 1
+    }
+    CHECK(fake_erase_calls == 0);
+    CHECK(fake_led_red == 1);
+    // the write-back is due: erase and write happen together
+    irq_at(6100);
+    CHECK(fake_erase_calls == 1);
+    CHECK(fake_write_calls == 1);
+    CHECK(mem_is(BLK(0), 0x22, FLASH_BLOCK_SIZE));
+    CHECK(mem_is(BLK(1), 0x11, 31 * FLASH_BLOCK_SIZE));
+    CHECK(fake_led_red == 0);
+
+    // A script that keeps writing to the sector keeps the last good copy on flash.
+    for (uint32_t t = 7000; t < 20000; t += 512) {
+        fake_tick = t;
+        CHECK(write_block(1, 0x33));
+        irq_at(t + 256);
+        CHECK(mem_is(BLK(0), 0x22, FLASH_BLOCK_SIZE));
+        CHECK(mem_is(BLK(1), 0x11, FLASH_BLOCK_SIZE));
+    }
+
+    // A forced sync writes everything at once.
+    CHECK(flash_bdev_ioctl(BDEV_IOCTL_SYNC, 0) == 0);
+    CHECK(mem_is(BLK(0), 0x22, FLASH_BLOCK_SIZE));
+    CHECK(mem_is(BLK(1), 0x33, FLASH_BLOCK_SIZE));
+    CHECK(mem_is(BLK(2), 0x11, 30 * FLASH_BLOCK_SIZE));
+    CHECK(fake_led_red == 0);
+}
+
+/******************************************************************************/
 
 static const struct {
     const char *name;
@@ -238,6 +278,7 @@ static const struct {
 } tests[] = {
     { "aud022", test_aud022 },
     { "aud017", test_aud017 },
+    { "aud005", test_aud005 },
 };
 
 int main(int argc, char **argv) {

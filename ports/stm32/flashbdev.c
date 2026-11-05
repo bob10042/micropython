@@ -66,7 +66,6 @@ extern uint8_t _micropy_hw_internal_flash_storage_ram_cache_end[];
 
 #define FLASH_FLAG_DIRTY        (1)
 #define FLASH_FLAG_FORCE_WRITE  (2)
-#define FLASH_FLAG_ERASED       (4)
 static __IO uint8_t flash_flags = 0;
 static uint32_t flash_cache_sector_start;
 static uint32_t flash_cache_sector_size;
@@ -180,24 +179,19 @@ static int flash_bdev_irq_handler(void) {
         return 0;
     }
 
-    // This code erases the flash directly, waiting for it to finish
-    if (!(flash_flags & FLASH_FLAG_ERASED)) {
+    // If not a forced write, wait at least 5 seconds after last write to flush
+    // On file close and flash unmount we get a forced write, so we can afford to wait a while
+    if ((flash_flags & FLASH_FLAG_FORCE_WRITE) || HAL_GetTick() - flash_tick_counter_last_write >= 5000) {
+        // Erase the sector only now, just before writing it, so that until then the
+        // flash keeps the old contents.  This code erases the flash directly, waiting
+        // for it to finish.  A failed write is retried with a fresh erase.
         int ret = flash_erase(flash_cache_sector_start);
         if (ret != 0) {
             return flash_bdev_write_failed(ret);
         }
-        flash_flags |= FLASH_FLAG_ERASED;
-        return 0;
-    }
-
-    // If not a forced write, wait at least 5 seconds after last write to flush
-    // On file close and flash unmount we get a forced write, so we can afford to wait a while
-    if ((flash_flags & FLASH_FLAG_FORCE_WRITE) || HAL_GetTick() - flash_tick_counter_last_write >= 5000) {
         // sync the cache RAM buffer by writing it to the flash page
-        int ret = flash_write(flash_cache_sector_start, (const uint32_t *)CACHE_MEM_START_ADDR, flash_cache_sector_size / 4);
+        ret = flash_write(flash_cache_sector_start, (const uint32_t *)CACHE_MEM_START_ADDR, flash_cache_sector_size / 4);
         if (ret != 0) {
-            // the sector may be partly programmed, so erase it again before retrying
-            flash_flags &= ~FLASH_FLAG_ERASED;
             return flash_bdev_write_failed(ret);
         }
         // clear the flash flags now that we have a clean cache
