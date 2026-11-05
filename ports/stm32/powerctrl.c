@@ -433,6 +433,9 @@ int powerctrl_set_sysclk(uint32_t sysclk, uint32_t ahb, uint32_t apb1, uint32_t 
 
     // Search for a valid PLL configuration that keeps USB at 48MHz
     uint32_t sysclk_mhz = sysclk / 1000000;
+    #if defined(STM32F4) && defined(MICROPY_HW_CLK_APB1_MAX) && defined(MICROPY_HW_CLK_APB2_MAX)
+    uint32_t sysclk_actual_mhz;
+    #endif
     for (const pll_freq_table_t *pll = &pll_freq_table[MP_ARRAY_SIZE(pll_freq_table) - 1]; pll >= &pll_freq_table[0]; --pll) {
         uint32_t sys = PLL_FREQ_TABLE_SYS(*pll);
         if (sys <= sysclk_mhz) {
@@ -454,6 +457,10 @@ int powerctrl_set_sysclk(uint32_t sysclk, uint32_t ahb, uint32_t apb1, uint32_t 
                 need_pll48 = vco_out % 48 != 0;
                 #endif
             }
+            #if defined(STM32F4) && defined(MICROPY_HW_CLK_APB1_MAX) && defined(MICROPY_HW_CLK_APB2_MAX)
+            // The system clock that will actually be used, for the bus clock check below
+            sysclk_actual_mhz = sys;
+            #endif
             goto set_clk;
         }
     }
@@ -507,9 +514,11 @@ set_clk:
     #endif
 
     #if defined(STM32F4) && defined(MICROPY_HW_CLK_APB1_MAX) && defined(MICROPY_HW_CLK_APB2_MAX)
-    // Refuse bus clocks above the MCU's limits, before anything is changed
-    if ((ahb >> APBPrescTable[RCC_ClkInitStruct.APB1CLKDivider >> RCC_CFGR_PPRE1_Pos]) > MICROPY_HW_CLK_APB1_MAX
-        || (ahb >> APBPrescTable[RCC_ClkInitStruct.APB2CLKDivider >> RCC_CFGR_PPRE1_Pos]) > MICROPY_HW_CLK_APB2_MAX) {
+    // Refuse bus clocks above the MCU's limits, before anything is changed.
+    // Use the system clock from the PLL table, which may be below the one requested.
+    uint32_t hclk = (sysclk_actual_mhz * 1000000) >> AHBPrescTable[RCC_ClkInitStruct.AHBCLKDivider >> RCC_CFGR_HPRE_Pos];
+    if ((hclk >> APBPrescTable[RCC_ClkInitStruct.APB1CLKDivider >> RCC_CFGR_PPRE1_Pos]) > MICROPY_HW_CLK_APB1_MAX
+        || (hclk >> APBPrescTable[RCC_ClkInitStruct.APB2CLKDivider >> RCC_CFGR_PPRE1_Pos]) > MICROPY_HW_CLK_APB2_MAX) {
         return -MP_EINVAL;
     }
     #endif
