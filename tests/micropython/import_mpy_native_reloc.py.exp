@@ -1,0 +1,6 @@
+mod0 OK
+mod1 OK
+mod2 ValueError incompatible .mpy file
+mod3 ValueError incompatible .mpy file
+mod4 ValueError incompatible .mpy file
+mod5 ValueError incompatible .mpy file

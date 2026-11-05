@@ -97,24 +97,39 @@ typedef struct _reloc_info_t {
     mp_module_context_t *context;
     uint8_t *rodata;
     uint8_t *bss;
+    size_t text_len;
+    size_t rodata_len;
 } reloc_info_t;
 
 void mp_native_relocate(void *ri_in, uint8_t *text, uintptr_t reloc_text) {
     // Relocate native code
+    // The relocation data comes from the .mpy file, so every location and table
+    // index is checked against the size of the region it refers to.
     reloc_info_t *ri = ri_in;
     uint8_t op;
     uintptr_t *addr_to_adjust = NULL;
+    size_t n_words_left = 0;
     while ((op = read_byte(ri->reader)) != 0xff) {
         if (op & 1) {
             // Point to new location to make adjustments
             size_t addr = read_uint(ri->reader);
+            uintptr_t *region;
+            size_t region_words;
             if ((addr & 1) == 0) {
                 // Point to somewhere in text
-                addr_to_adjust = &((uintptr_t *)text)[addr >> 1];
+                region = (uintptr_t *)text;
+                region_words = ri->text_len / sizeof(uintptr_t);
             } else {
                 // Point to somewhere in rodata
-                addr_to_adjust = &((uintptr_t *)ri->rodata)[addr >> 1];
+                region = (uintptr_t *)ri->rodata;
+                region_words = ri->rodata_len / sizeof(uintptr_t);
             }
+            addr >>= 1;
+            if (addr > region_words) {
+                goto bad_reloc;
+            }
+            addr_to_adjust = region + addr;
+            n_words_left = region_words - addr;
         }
         op >>= 1;
         uintptr_t dest;
@@ -146,12 +161,24 @@ void mp_native_relocate(void *ri_in, uint8_t *text, uintptr_t reloc_text) {
             dest = (uintptr_t)&mp_fun_table;
         } else {
             // Destination is an entry in mp_fun_table
+            if ((size_t)(op - 9) >= sizeof(mp_fun_table) / sizeof(uintptr_t)) {
+                goto bad_reloc;
+            }
             dest = ((uintptr_t *)&mp_fun_table)[op - 9];
         }
+        if (n > n_words_left) {
+            // Also catches an adjustment before any location was set.
+            goto bad_reloc;
+        }
+        n_words_left -= n;
         while (n--) {
             *addr_to_adjust++ += dest;
         }
     }
+    return;
+
+bad_reloc:
+    mp_raise_ValueError(MP_ERROR_TEXT("incompatible .mpy file"));
 }
 
 #endif
@@ -353,8 +380,8 @@ static mp_raw_code_t *load_raw_code(mp_reader_t *reader, mp_module_context_t *co
     // Load optional BSS/rodata for viper.
     uint8_t *rodata = NULL;
     uint8_t *bss = NULL;
+    size_t rodata_size = 0;
     if (kind == MP_CODE_NATIVE_VIPER) {
-        size_t rodata_size = 0;
         if (native_scope_flags & MP_SCOPE_FLAG_VIPERRODATA) {
             rodata_size = read_uint(reader);
         }
@@ -418,7 +445,7 @@ static mp_raw_code_t *load_raw_code(mp_reader_t *reader, mp_module_context_t *co
         #endif
 
         // Relocate and commit code to executable address space
-        reloc_info_t ri = {reader, context, rodata, bss};
+        reloc_info_t ri = {reader, context, rodata, bss, fun_data_len, rodata_size};
         #if MICROPY_PERSISTENT_CODE_TRACK_FUN_DATA
         if (native_scope_flags & MP_SCOPE_FLAG_VIPERRELOC) {
             // Track the function data memory so it's not reclaimed by the GC.
