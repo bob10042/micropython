@@ -93,6 +93,7 @@ uint8_t *usbd_cdc_init(usbd_cdc_state_t *cdc_in) {
     cdc->rx_buf_get = 0;
     cdc->rx_buf_full = false;
     cdc->tx_need_empty_packet = 0;
+    cdc->tx_always_stalled = false;
     cdc->connect_state = USBD_CDC_CONNECT_STATE_DISCONNECTED;
     if (cdc->attached_to_repl) {
         // Default behavior is non-blocking when attached to repl
@@ -235,6 +236,9 @@ void usbd_cdc_tx_ready(usbd_cdc_state_t *cdc_in) {
 
     usbd_cdc_itf_t *cdc = (usbd_cdc_itf_t *)cdc_in;
     cdc->tx_buf_ptr_out = cdc->tx_buf_ptr_out_next;
+
+    // The host has taken the previous packet (if any), so it is reading again
+    cdc->tx_always_stalled = false;
 
     if (usbd_cdc_tx_buffer_empty(cdc) && !cdc->tx_need_empty_packet) {
         // No outstanding data to send
@@ -401,8 +405,15 @@ void usbd_cdc_tx_always(usbd_cdc_itf_t *cdc, const uint8_t *buf, uint32_t len) {
         if (cdc->connect_state != USBD_CDC_CONNECT_STATE_DISCONNECTED) {
             // If the buffer is full, wait until it gets drained, with a timeout of 500ms
             // (wraparound of tick is taken care of by 2's complement arithmetic).
+            // Once a wait has timed out the host is not reading, so don't wait again
+            // (for every byte) until the host takes a packet (see usbd_cdc_tx_ready);
+            // until then just overwrite the oldest data.
             uint32_t start = HAL_GetTick();
-            while (usbd_cdc_tx_buffer_full(cdc) && HAL_GetTick() - start <= 500) {
+            while (!cdc->tx_always_stalled && usbd_cdc_tx_buffer_full(cdc)) {
+                if (HAL_GetTick() - start > 500) {
+                    cdc->tx_always_stalled = true;
+                    break;
+                }
                 usbd_cdc_try_tx(cdc);
                 if (cdc->base.usbd->pdev->dev_state == USBD_STATE_SUSPENDED) {
                     // The USB is suspended so buffer will never be drained; exit loop

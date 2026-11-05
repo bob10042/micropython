@@ -57,6 +57,7 @@ typedef struct _usbd_cdc_itf_t {
     volatile uint16_t tx_buf_ptr_out; // increment this pointer modulo MICROPY_HW_USB_CDC_TX_DATA_SIZE when data is drained
     uint16_t tx_buf_ptr_out_next; // next position of above once transmission finished
     uint8_t tx_need_empty_packet; // used to flush the USB IN endpoint if the last packet was exactly the endpoint packet size
+    volatile uint8_t tx_always_stalled; // set when usbd_cdc_tx_always timed out on a full buffer, cleared when the host takes a packet
 
     uint8_t cdc_idx; // between 0 and MICROPY_HW_USB_CDC_NUM-1
     volatile uint8_t connect_state; // indicates if we are connected
